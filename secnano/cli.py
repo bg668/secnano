@@ -6,6 +6,7 @@ import argparse
 from collections.abc import Sequence
 
 from secnano import __version__
+from secnano.adapters_command import run_adapters_list
 from secnano.audit_command import run_audit_list, run_audit_show
 from secnano.bootstrap import run_bootstrap
 from secnano.context import load_context
@@ -18,6 +19,7 @@ from secnano.roles_commands import (
     run_roles_show,
 )
 from secnano.runtime_command import run_runtime_inspect, run_runtime_validate
+from secnano.tools_command import run_tools
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -121,6 +123,18 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_validate.add_argument("--debug", action="store_true", help="输出调试日志")
     runtime_validate.set_defaults(handler=_handle_runtime_validate)
 
+    adapters_parser = subparsers.add_parser("adapters", help="能力适配器管理")
+    adapters_subparsers = adapters_parser.add_subparsers(dest="adapters_command", required=True)
+    adapters_list = adapters_subparsers.add_parser("list", help="列出能力适配器")
+    adapters_list.add_argument("--json", action="store_true", dest="as_json", help="输出 JSON")
+    adapters_list.add_argument("--debug", action="store_true", help="输出调试日志")
+    adapters_list.set_defaults(handler=_handle_adapters_list)
+
+    tools_parser = subparsers.add_parser("tools", help="列出可用工具目录")
+    tools_parser.add_argument("--json", action="store_true", dest="as_json", help="输出 JSON")
+    tools_parser.add_argument("--debug", action="store_true", help="输出调试日志")
+    tools_parser.set_defaults(handler=_handle_tools)
+
     return parser
 
 
@@ -194,6 +208,14 @@ def _handle_runtime_inspect(args: argparse.Namespace) -> int:
 
 def _handle_runtime_validate(args: argparse.Namespace) -> int:
     return run_runtime_validate(load_context(), as_json=args.as_json, debug=args.debug)
+
+
+def _handle_adapters_list(args: argparse.Namespace) -> int:
+    return run_adapters_list(load_context(), as_json=args.as_json, debug=args.debug)
+
+
+def _handle_tools(args: argparse.Namespace) -> int:
+    return run_tools(load_context(), as_json=args.as_json, debug=args.debug)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

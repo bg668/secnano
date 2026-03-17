@@ -22,7 +22,7 @@
 
 | 模块 | 当前状态 | 完成情况 | 可执行/可调试能力 |
 |---|---|---|---|
-| 输入输出模块 | 已落地最小闭环 | 65% | CLI 已支持 `doctor/bootstrap/roles/delegate/audit/runtime`，支持 `--json/--debug`。 |
+| 输入输出模块 | 已落地最小闭环 | 72% | CLI 已支持 `doctor/bootstrap/roles/delegate/audit/runtime/adapters/tools`，支持 `--json/--debug`。 |
 | 任务/消息模型模块 | 已落地最小模型 | 40% | 已定义 `DelegateRequest/DelegateResult/TaskArchiveRecord`。 |
 | 编排调度模块 | 已落地最小调度 | 50% | 已实现委派入口、backend 选择、角色校验、运行时校验联动与归档写入。 |
 | 认知内核模块 | 兼容准备中 | 10% | 当前仅保留 `nanobot` runtime bridge 检查，未接入实际 loop。 |
@@ -34,11 +34,11 @@
 
 | 模块 | 当前状态 | 完成情况 | 说明 |
 |---|---|---|---|
-| 配置管理模块 | 进行中 | 35% | 已有 `ProjectContext` 与运行时依赖校验模块。 |
+| 配置管理模块 | 进行中 | 40% | 已有 `ProjectContext`、运行时依赖校验与适配器可用性检查。 |
 | AI 供应商模块 | 未开始 | 0% | 未定义 provider 合同与注册。 |
-| 工具注册模块 | 未开始 | 0% | 未定义工具注册与执行策略。 |
+| 工具注册模块 | 已落地最小目录 | 30% | 已支持 `tools` 命令输出工具目录与来源适配器。 |
 | 技能注册/加载模块 | 未开始 | 0% | 未定义技能扫描与加载机制。 |
-| 能力适配模块 | 未开始 | 0% | 未定义 `CapabilityAdapter` 合同。 |
+| 能力适配模块 | 已落地最小闭环 | 55% | 已定义 `CapabilityAdapter` 合同、内置适配器与 `adapters list`。 |
 
 ## 4. 已完成阶段性事项
 
@@ -76,10 +76,17 @@
 3. 已实现 `roles promote-memory`，可将任务摘要提升写入角色 `MEMORY.md`。
 4. 已实现 memory promotion 幂等保护，避免同一 `task_id` 重复写入。
 
+### 4.6 Milestone 4：能力适配接口（已完成，最小闭环）
+
+1. 已定义 `CapabilityAdapter` 合同与能力数据结构。
+2. 已实现内置适配器注册表（`host_execution`、`pyclaw_container`、`nanobot_runtime`）。
+3. 已实现 `adapters list` 输出适配器与能力清单。
+4. 已实现 `tools` 输出工具目录及其适配器来源。
+
 ## 5. 下一步
 
-下一阶段进入 Milestone 4（能力适配接口）：
+下一阶段进入稳定化与深度实现阶段：
 
-1. `adapters list`：输出已注册能力适配器。
-2. `tools`：输出可用工具与来源。
-3. 在不改变单一主控入口前提下，定义并接入 `CapabilityAdapter` 合同。
+1. 将 `pyclaw_container` 从 `validated` 推进到真实容器执行。
+2. 为 `tools` 与 `adapters` 增加权限/策略约束。
+3. 逐步补齐 AI 供应商、技能加载与能力适配扩展点。

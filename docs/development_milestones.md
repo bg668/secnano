@@ -120,7 +120,13 @@
 
 当前状态：
 
-- 未开始
+- 已完成（最小闭环）
+
+已验证：
+
+- 已通过 `.venv/bin/python -m secnano adapters list --json` 输出能力适配器清单。
+- 已通过 `.venv/bin/python -m secnano tools --json` 输出工具目录与适配器来源。
+- 已通过 `.venv/bin/python -m secnano doctor --json` 继续返回健康状态。
 
 ## 3. 约束
 

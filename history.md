@@ -94,3 +94,21 @@
 2. `.venv/bin/python -m secnano audit show 406b3988f660 --json`
 3. `.venv/bin/python -m secnano roles promote-memory general_office 406b3988f660 --json`
 4. `.venv/bin/python -m secnano roles promote-memory general_office 406b3988f660 --json`（重复执行返回 `already_promoted`）
+
+### Milestone 4：能力适配接口（已完成，最小闭环）
+
+已完成功能：
+
+1. 新增 `CapabilityAdapter` 合同与 `CapabilitySpec/AdapterSnapshot` 数据结构。
+2. 新增内置适配器：`host_execution`、`pyclaw_container`、`nanobot_runtime`。
+3. 新增适配器注册表，统一输出适配器可用性与能力快照。
+4. 新增 `adapters list` 命令，支持文本与 JSON 输出。
+5. 新增 `tools` 命令，输出工具目录、来源适配器与能力映射。
+
+验收命令（已通过）：
+
+1. `.venv/bin/python -m secnano adapters list`
+2. `.venv/bin/python -m secnano adapters list --json`
+3. `.venv/bin/python -m secnano tools`
+4. `.venv/bin/python -m secnano tools --json`
+5. `.venv/bin/python -m secnano doctor --json`

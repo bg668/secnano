@@ -17,6 +17,8 @@
 - `python3 -m secnano runtime inspect`
 - `python3 -m secnano runtime validate`
 - `python3 -m secnano delegate --backend pyclaw_container --role general_office --task "..."`
+- `python3 -m secnano adapters list`
+- `python3 -m secnano tools`
 
 兼容阶段目录约定：
 
