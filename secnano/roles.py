@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 from secnano.context import ProjectContext
-from secnano.models import RoleInfo
+from secnano.models import RoleInfo, TaskArchiveRecord, utc_now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -81,3 +82,76 @@ def role_exists(ctx: ProjectContext, role_name: str) -> bool:
     role_dir = ctx.roles_dir / role_name
     return role_dir.is_dir() and (role_dir / "ROLE.md").exists()
 
+
+def _read_text(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    return path.read_text(encoding="utf-8")
+
+
+def get_role_assets(ctx: ProjectContext, role_name: str) -> dict[str, Any] | None:
+    role_dir = ctx.roles_dir / role_name
+    if not role_dir.is_dir():
+        return None
+
+    skills_dir = role_dir / "skills"
+    skills = sorted(path.name for path in skills_dir.glob("*") if path.is_file())
+    payload = {
+        "name": role_name,
+        "path": str(role_dir),
+        "soul": _read_text(role_dir / "SOUL.md"),
+        "role": _read_text(role_dir / "ROLE.md"),
+        "memory": _read_text(role_dir / "MEMORY.md"),
+        "policy": _read_text(role_dir / "POLICY.json"),
+        "skills": skills,
+    }
+    return payload
+
+
+def promote_memory(
+    ctx: ProjectContext,
+    *,
+    role_name: str,
+    record: TaskArchiveRecord,
+) -> dict[str, Any]:
+    role_dir = ctx.roles_dir / role_name
+    if not role_dir.is_dir():
+        raise FileNotFoundError(f"role not found: {role_name}")
+
+    memory_path = role_dir / "MEMORY.md"
+    if not memory_path.exists():
+        memory_path.write_text("# MEMORY\n\n", encoding="utf-8")
+
+    existing = memory_path.read_text(encoding="utf-8")
+    marker = f"- task_id: `{record.task_id}`"
+    if marker in existing:
+        return {
+            "role": role_name,
+            "memory_path": str(memory_path),
+            "task_id": record.task_id,
+            "updated": False,
+            "reason": "already_promoted",
+        }
+
+    summary = record.output.replace("\n", " ").strip()
+    if len(summary) > 200:
+        summary = summary[:200] + "..."
+
+    entry = (
+        f"\n## {utc_now_iso()}\n\n"
+        f"- task_id: `{record.task_id}`\n"
+        f"- backend: `{record.backend}`\n"
+        f"- status: `{record.status}`\n"
+        f"- task: {record.task}\n"
+        f"- summary: {summary}\n"
+    )
+    with memory_path.open("a", encoding="utf-8") as handle:
+        handle.write(entry)
+
+    return {
+        "role": role_name,
+        "memory_path": str(memory_path),
+        "task_id": record.task_id,
+        "updated": True,
+        "reason": "appended",
+    }

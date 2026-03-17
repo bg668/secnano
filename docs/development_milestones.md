@@ -95,7 +95,13 @@
 
 当前状态：
 
-- 未开始（当前仅具备默认角色资产创建与读取能力）
+- 已完成（最小闭环）
+
+已验证：
+
+- 已通过 `.venv/bin/python -m secnano roles show general_office --json` 读取 `SOUL/ROLE/MEMORY/POLICY`。
+- 已通过 `.venv/bin/python -m secnano audit show <task-id> --json` 读取单任务归档。
+- 已通过 `.venv/bin/python -m secnano roles promote-memory general_office <task-id> --json` 完成记忆提升并写入 `MEMORY.md`。
 
 ### Milestone 4：能力适配接口
 
@@ -114,7 +120,7 @@
 
 当前状态：
 
-- 未开始，当前仅有 `nanobot` runtime bridge 的临时兼容层
+- 未开始
 
 ## 3. 约束
 

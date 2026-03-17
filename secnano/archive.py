@@ -33,3 +33,10 @@ class TaskArchiveStore:
             payload = json.loads(file_path.read_text(encoding="utf-8"))
             records.append(TaskArchiveRecord(**payload))
         return records
+
+    def get_record(self, task_id: str) -> TaskArchiveRecord | None:
+        file_path = self._dir / f"{task_id}.json"
+        if not file_path.exists():
+            return None
+        payload = json.loads(file_path.read_text(encoding="utf-8"))
+        return TaskArchiveRecord(**payload)

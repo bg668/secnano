@@ -77,3 +77,20 @@
 2. `.venv/bin/python -m secnano runtime validate --json`
 3. `.venv/bin/python -m secnano delegate --backend pyclaw_container --role general_office --task "容器后端准备链路验收" --json`
 4. `.venv/bin/python -m secnano audit list --limit 5 --json`
+
+### Milestone 3：角色治理最小闭环（已完成）
+
+已完成功能：
+
+1. 新增 `roles show` 命令：读取角色 `SOUL/ROLE/MEMORY/POLICY` 与 `skills`。
+2. 新增 `audit show` 命令：按 `task_id` 读取单任务归档。
+3. 新增 `roles promote-memory` 命令：将任务摘要提升写入角色 `MEMORY.md`。
+4. 归档存储新增 `get_record(task_id)` 单条读取能力。
+5. memory promotion 新增幂等保护：同一 `task_id` 不重复写入。
+
+验收命令（已通过）：
+
+1. `.venv/bin/python -m secnano roles show general_office --json`
+2. `.venv/bin/python -m secnano audit show 406b3988f660 --json`
+3. `.venv/bin/python -m secnano roles promote-memory general_office 406b3988f660 --json`
+4. `.venv/bin/python -m secnano roles promote-memory general_office 406b3988f660 --json`（重复执行返回 `already_promoted`）

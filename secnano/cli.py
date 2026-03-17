@@ -6,12 +6,17 @@ import argparse
 from collections.abc import Sequence
 
 from secnano import __version__
-from secnano.audit_command import run_audit_list
+from secnano.audit_command import run_audit_list, run_audit_show
 from secnano.bootstrap import run_bootstrap
 from secnano.context import load_context
 from secnano.delegate_command import run_delegate
 from secnano.doctor import run_doctor
-from secnano.roles_commands import run_roles_ensure_defaults, run_roles_list
+from secnano.roles_commands import (
+    run_roles_ensure_defaults,
+    run_roles_list,
+    run_roles_promote_memory,
+    run_roles_show,
+)
 from secnano.runtime_command import run_runtime_inspect, run_runtime_validate
 
 
@@ -54,6 +59,23 @@ def build_parser() -> argparse.ArgumentParser:
     roles_list.add_argument("--debug", action="store_true", help="输出调试日志")
     roles_list.set_defaults(handler=_handle_roles_list)
 
+    roles_show = roles_subparsers.add_parser("show", help="查看角色资产详情")
+    roles_show.add_argument("role_name", help="角色名称")
+    roles_show.add_argument("--json", action="store_true", dest="as_json", help="输出 JSON")
+    roles_show.add_argument("--debug", action="store_true", help="输出调试日志")
+    roles_show.set_defaults(handler=_handle_roles_show)
+
+    roles_promote_memory = roles_subparsers.add_parser(
+        "promote-memory", help="将任务归档提升到角色 MEMORY"
+    )
+    roles_promote_memory.add_argument("role_name", help="角色名称")
+    roles_promote_memory.add_argument("task_id", help="任务 ID")
+    roles_promote_memory.add_argument(
+        "--json", action="store_true", dest="as_json", help="输出 JSON"
+    )
+    roles_promote_memory.add_argument("--debug", action="store_true", help="输出调试日志")
+    roles_promote_memory.set_defaults(handler=_handle_roles_promote_memory)
+
     delegate_parser = subparsers.add_parser("delegate", help="执行最小委派链路")
     delegate_parser.add_argument(
         "--backend",
@@ -75,6 +97,12 @@ def build_parser() -> argparse.ArgumentParser:
     audit_list.add_argument("--json", action="store_true", dest="as_json", help="输出 JSON")
     audit_list.add_argument("--debug", action="store_true", help="输出调试日志")
     audit_list.set_defaults(handler=_handle_audit_list)
+
+    audit_show = audit_subparsers.add_parser("show", help="查看单个归档任务")
+    audit_show.add_argument("task_id", help="任务 ID")
+    audit_show.add_argument("--json", action="store_true", dest="as_json", help="输出 JSON")
+    audit_show.add_argument("--debug", action="store_true", help="输出调试日志")
+    audit_show.set_defaults(handler=_handle_audit_show)
 
     runtime_parser = subparsers.add_parser("runtime", help="运行时检查")
     runtime_subparsers = runtime_parser.add_subparsers(dest="runtime_command", required=True)
@@ -112,6 +140,25 @@ def _handle_roles_list(args: argparse.Namespace) -> int:
     return run_roles_list(load_context(), as_json=args.as_json, debug=args.debug)
 
 
+def _handle_roles_show(args: argparse.Namespace) -> int:
+    return run_roles_show(
+        load_context(),
+        role_name=args.role_name,
+        as_json=args.as_json,
+        debug=args.debug,
+    )
+
+
+def _handle_roles_promote_memory(args: argparse.Namespace) -> int:
+    return run_roles_promote_memory(
+        load_context(),
+        role_name=args.role_name,
+        task_id=args.task_id,
+        as_json=args.as_json,
+        debug=args.debug,
+    )
+
+
 def _handle_delegate(args: argparse.Namespace) -> int:
     return run_delegate(
         load_context(),
@@ -127,6 +174,15 @@ def _handle_audit_list(args: argparse.Namespace) -> int:
     return run_audit_list(
         load_context(),
         limit=args.limit,
+        as_json=args.as_json,
+        debug=args.debug,
+    )
+
+
+def _handle_audit_show(args: argparse.Namespace) -> int:
+    return run_audit_show(
+        load_context(),
+        task_id=args.task_id,
         as_json=args.as_json,
         debug=args.debug,
     )

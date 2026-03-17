@@ -8,7 +8,7 @@
 
 当前仓库主要由以下部分组成：
 
-1. `secnano/`：本项目主实现代码（已落地 Milestone 0 + Milestone 1 最小链路）。
+1. `secnano/`：本项目主实现代码（已落地 Milestone 0 ~ Milestone 3 最小链路）。
 2. `roles/`：默认角色资产目录（当前已可自动生成 `general_office`）。
 3. `runtime/tasks/`：任务归档目录（当前可写入并通过审计命令读取）。
 4. `runtime` 命令：已支持 `inspect/validate` 运行时诊断。
@@ -22,13 +22,13 @@
 
 | 模块 | 当前状态 | 完成情况 | 可执行/可调试能力 |
 |---|---|---|---|
-| 输入输出模块 | 已落地最小闭环 | 55% | CLI 已支持 `doctor/bootstrap/roles/delegate/audit/runtime`，支持 `--json`。 |
+| 输入输出模块 | 已落地最小闭环 | 65% | CLI 已支持 `doctor/bootstrap/roles/delegate/audit/runtime`，支持 `--json/--debug`。 |
 | 任务/消息模型模块 | 已落地最小模型 | 40% | 已定义 `DelegateRequest/DelegateResult/TaskArchiveRecord`。 |
-| 编排调度模块 | 已落地最小调度 | 40% | 已实现委派入口、backend 选择、角色校验、运行时校验联动与归档写入。 |
+| 编排调度模块 | 已落地最小调度 | 50% | 已实现委派入口、backend 选择、角色校验、运行时校验联动与归档写入。 |
 | 认知内核模块 | 兼容准备中 | 10% | 当前仅保留 `nanobot` runtime bridge 检查，未接入实际 loop。 |
-| 角色与能力资产模块 | 已落地最小能力 | 35% | `roles ensure-defaults/list` 可用，角色目录可生成可读取。 |
+| 角色与能力资产模块 | 已落地最小闭环 | 55% | 已支持 `roles show`、`roles promote-memory`，角色资产可读可写。 |
 | 执行模块 | 已落地 host + container validated | 45% | 已有 `host` backend 与 `pyclaw_container` validated 链路。 |
-| 归档与状态模块 | 已落地最小版 | 40% | 委派结果自动归档到 `runtime/tasks`，`audit list` 可读。 |
+| 归档与状态模块 | 已落地最小闭环 | 55% | 已支持 `audit list` 与 `audit show`，归档支持单条读取。 |
 
 ### 3.2 基础支撑模块
 
@@ -69,10 +69,17 @@
 3. 已实现 `pyclaw_container` backend 的 validated 执行返回。
 4. 已实现 `delegate --backend pyclaw_container ...` 的归档写入链路。
 
+### 4.5 Milestone 3：角色治理最小闭环（已完成）
+
+1. 已实现 `roles show`，可读取角色 `SOUL/ROLE/MEMORY/POLICY`。
+2. 已实现 `audit show`，可按 `task_id` 查看单任务归档。
+3. 已实现 `roles promote-memory`，可将任务摘要提升写入角色 `MEMORY.md`。
+4. 已实现 memory promotion 幂等保护，避免同一 `task_id` 重复写入。
+
 ## 5. 下一步
 
-下一阶段进入 Milestone 3（角色治理最小闭环）：
+下一阶段进入 Milestone 4（能力适配接口）：
 
-1. `roles show <role>`：读取 `SOUL/ROLE/MEMORY/POLICY` 资产。
-2. `audit show <task-id>`：查看单任务归档明细。
-3. `roles promote-memory <role> <task-id>`：最小记忆提升入口。
+1. `adapters list`：输出已注册能力适配器。
+2. `tools`：输出可用工具与来源。
+3. 在不改变单一主控入口前提下，定义并接入 `CapabilityAdapter` 合同。

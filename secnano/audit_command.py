@@ -29,3 +29,30 @@ def run_audit_list(
         )
     return 0
 
+
+def run_audit_show(
+    ctx: ProjectContext, *, task_id: str, as_json: bool = False, debug: bool = False
+) -> int:
+    setup_logging(debug)
+    record = TaskArchiveStore(ctx).get_record(task_id)
+    if record is None:
+        print(f"未找到任务归档：{task_id}")
+        return 2
+
+    payload = asdict(record)
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    print(f"task_id: {record.task_id}")
+    print(f"backend: {record.backend}")
+    print(f"role: {record.role}")
+    print(f"status: {record.status}")
+    print(f"created_at: {record.created_at}")
+    print(f"finished_at: {record.finished_at}")
+    print(f"duration_ms: {record.duration_ms}")
+    print("--- TASK ---")
+    print(record.task)
+    print("--- OUTPUT ---")
+    print(record.output)
+    return 0
