@@ -11,3 +11,7 @@ wheels/
 
 id_ed25519
 id_ed25519.pub
+
+# Runtime artifacts
+runtime/
+secnano.zip

@@ -41,3 +41,39 @@
 1. `.venv/bin/python -m secnano doctor`
 2. `.venv/bin/python -m secnano bootstrap --dry-run`
 3. `.venv/bin/python -m secnano bootstrap`
+
+### Milestone 1：单一主控 agent 与安全委派最小链路（已完成）
+
+已完成功能：
+
+1. 新增任务模型：`DelegateRequest`、`DelegateResult`、`TaskArchiveRecord`。
+2. 新增角色资产模块：支持 `roles ensure-defaults` 与 `roles list`。
+3. 新增后端协议 `SubagentBackend` 与 `host` backend 最小实现。
+4. 新增委派命令 `delegate`：支持后端选择、角色校验、执行与归档。
+5. 新增审计命令 `audit list`：支持读取 `runtime/tasks/*.json` 归档。
+6. 新增调试日志能力：`roles/delegate/audit` 支持 `--debug`。
+
+验收命令（已通过）：
+
+1. `.venv/bin/python -m secnano roles ensure-defaults`
+2. `.venv/bin/python -m secnano roles list`
+3. `.venv/bin/python -m secnano delegate --backend host --role general_office --task "完成模块化开发最小链路" --json`
+4. `.venv/bin/python -m secnano audit list --json`
+5. `.venv/bin/python -m secnano delegate --backend host --role general_office --task "调试日志验证" --debug`
+
+### Milestone 2：容器后端接入准备（validated 阶段，已完成）
+
+已完成功能：
+
+1. 新增 `runtime inspect` 命令，输出 `docker/node/npm/refs/packages` 依赖明细。
+2. 新增 `runtime validate` 命令，支持 required/optional 校验与退出码。
+3. 新增 `pyclaw_container` backend，支持 validated 阶段执行返回。
+4. 更新 `delegate` 命令，支持 `--backend pyclaw_container` 并写入归档。
+5. 将运行时校验逻辑抽象为 `runtime_checks` 模块，便于后续复用与调试。
+
+验收命令（已通过）：
+
+1. `.venv/bin/python -m secnano runtime inspect --json`
+2. `.venv/bin/python -m secnano runtime validate --json`
+3. `.venv/bin/python -m secnano delegate --backend pyclaw_container --role general_office --task "容器后端准备链路验收" --json`
+4. `.venv/bin/python -m secnano audit list --limit 5 --json`

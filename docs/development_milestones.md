@@ -16,13 +16,13 @@
 
 可执行交付物：
 
-- `python -m secnano --help`
-- `python -m secnano doctor`
-- `python -m secnano bootstrap --dry-run`
+- `python3 -m secnano --help`
+- `python3 -m secnano doctor`
+- `python3 -m secnano bootstrap --dry-run`
 
 当前状态：
 
-- 已完成
+- 已完成（最小链路）
 
 ### Milestone 1：单一主控 agent 与安全委派最小链路
 
@@ -37,10 +37,10 @@
 
 可执行交付物：
 
-- `python -m secnano roles ensure-defaults`
-- `python -m secnano roles list`
-- `python -m secnano delegate --backend host --role general_office --task "..." ...`
-- `python -m secnano audit list`
+- `python3 -m secnano roles ensure-defaults`
+- `python3 -m secnano roles list`
+- `python3 -m secnano delegate --backend host --role general_office --task "..." ...`
+- `python3 -m secnano audit list`
 
 当前状态：
 
@@ -48,7 +48,10 @@
 
 已验证：
 
-- 已通过 `.venv/bin/python -m secnano delegate --backend host --role general_office --task "..." --json` 返回真实 delegated 结果。
+- 已通过 `.venv/bin/python -m secnano roles ensure-defaults` 创建默认角色资产。
+- 已通过 `.venv/bin/python -m secnano roles list` 返回 `general_office`。
+- 已通过 `.venv/bin/python -m secnano delegate --backend host --role general_office --task "..." --json` 返回可归档 delegated 结果。
+- 已通过 `.venv/bin/python -m secnano audit list --json` 返回任务归档列表。
 
 ### Milestone 2：容器后端接入准备
 
@@ -60,10 +63,10 @@
 
 可执行交付物：
 
-- `python -m secnano doctor --json`
-- `python -m secnano runtime inspect`
-- `python -m secnano runtime validate`
-- `python -m secnano delegate --backend pyclaw_container --role general_office --task "..."`
+- `python3 -m secnano doctor --json`
+- `python3 -m secnano runtime inspect`
+- `python3 -m secnano runtime validate`
+- `python3 -m secnano delegate --backend pyclaw_container --role general_office --task "..."`
 
 当前状态：
 
@@ -71,8 +74,9 @@
 
 已验证：
 
-- 已通过 `.venv/bin/python -m secnano runtime validate` 验证本地 `docker`、`node/npm` 与 `refs` 路径。
-- 已通过 `.venv/bin/python -m secnano delegate --backend pyclaw_container --role general_office --task "..." --json` 返回 `validated` 状态。
+- 已通过 `.venv/bin/python -m secnano runtime inspect --json` 输出依赖检查明细。
+- 已通过 `.venv/bin/python -m secnano runtime validate --json` 返回 `validated` 状态。
+- 已通过 `.venv/bin/python -m secnano delegate --backend pyclaw_container --role general_office --task "..." --json` 返回 `validated` 并写入归档。
 
 ### Milestone 3：角色治理最小闭环
 
@@ -85,13 +89,13 @@
 
 可执行交付物：
 
-- `python -m secnano roles show general_office`
-- `python -m secnano audit show <task-id>`
-- `python -m secnano roles promote-memory <role> <task-id>`
+- `python3 -m secnano roles show general_office`
+- `python3 -m secnano audit show <task-id>`
+- `python3 -m secnano roles promote-memory <role> <task-id>`
 
 当前状态：
 
-- 已具备 `ROLE/MEMORY` 最小读能力与 memory promotion 入口，`SOUL/policy` 尚未落地
+- 未开始（当前仅具备默认角色资产创建与读取能力）
 
 ### Milestone 4：能力适配接口
 
@@ -104,9 +108,9 @@
 
 可执行交付物：
 
-- `python -m secnano adapters list`
-- `python -m secnano doctor --json`
-- `python -m secnano tools`
+- `python3 -m secnano adapters list`
+- `python3 -m secnano doctor --json`
+- `python3 -m secnano tools`
 
 当前状态：
 

@@ -1,0 +1,10 @@
+{
+  "allowed_tools": [
+    "shell",
+    "filesystem"
+  ],
+  "write_scope": [
+    "workspace"
+  ],
+  "notes": "Milestone 1 minimal policy"
+}

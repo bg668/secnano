@@ -6,9 +6,13 @@ import argparse
 from collections.abc import Sequence
 
 from secnano import __version__
+from secnano.audit_command import run_audit_list
 from secnano.bootstrap import run_bootstrap
 from secnano.context import load_context
+from secnano.delegate_command import run_delegate
 from secnano.doctor import run_doctor
+from secnano.roles_commands import run_roles_ensure_defaults, run_roles_list
+from secnano.runtime_command import run_runtime_inspect, run_runtime_validate
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,6 +39,60 @@ def build_parser() -> argparse.ArgumentParser:
     )
     bootstrap_parser.set_defaults(handler=_handle_bootstrap)
 
+    roles_parser = subparsers.add_parser("roles", help="角色资产管理")
+    roles_subparsers = roles_parser.add_subparsers(dest="roles_command", required=True)
+
+    roles_ensure = roles_subparsers.add_parser(
+        "ensure-defaults", help="确保默认角色资产存在"
+    )
+    roles_ensure.add_argument("--json", action="store_true", dest="as_json", help="输出 JSON")
+    roles_ensure.add_argument("--debug", action="store_true", help="输出调试日志")
+    roles_ensure.set_defaults(handler=_handle_roles_ensure_defaults)
+
+    roles_list = roles_subparsers.add_parser("list", help="列出可用角色")
+    roles_list.add_argument("--json", action="store_true", dest="as_json", help="输出 JSON")
+    roles_list.add_argument("--debug", action="store_true", help="输出调试日志")
+    roles_list.set_defaults(handler=_handle_roles_list)
+
+    delegate_parser = subparsers.add_parser("delegate", help="执行最小委派链路")
+    delegate_parser.add_argument(
+        "--backend",
+        required=True,
+        choices=["host", "pyclaw_container"],
+        help="委派后端名称",
+    )
+    delegate_parser.add_argument("--role", required=True, help="角色名称")
+    delegate_parser.add_argument("--task", required=True, help="任务描述")
+    delegate_parser.add_argument("--json", action="store_true", dest="as_json", help="输出 JSON")
+    delegate_parser.add_argument("--debug", action="store_true", help="输出调试日志")
+    delegate_parser.set_defaults(handler=_handle_delegate)
+
+    audit_parser = subparsers.add_parser("audit", help="归档审计查询")
+    audit_subparsers = audit_parser.add_subparsers(dest="audit_command", required=True)
+
+    audit_list = audit_subparsers.add_parser("list", help="列出归档任务")
+    audit_list.add_argument("--limit", type=int, default=20, help="最多返回条数")
+    audit_list.add_argument("--json", action="store_true", dest="as_json", help="输出 JSON")
+    audit_list.add_argument("--debug", action="store_true", help="输出调试日志")
+    audit_list.set_defaults(handler=_handle_audit_list)
+
+    runtime_parser = subparsers.add_parser("runtime", help="运行时检查")
+    runtime_subparsers = runtime_parser.add_subparsers(dest="runtime_command", required=True)
+
+    runtime_inspect = runtime_subparsers.add_parser("inspect", help="查看运行时依赖状态")
+    runtime_inspect.add_argument(
+        "--json", action="store_true", dest="as_json", help="输出 JSON"
+    )
+    runtime_inspect.add_argument("--debug", action="store_true", help="输出调试日志")
+    runtime_inspect.set_defaults(handler=_handle_runtime_inspect)
+
+    runtime_validate = runtime_subparsers.add_parser("validate", help="校验运行时必需依赖")
+    runtime_validate.add_argument(
+        "--json", action="store_true", dest="as_json", help="输出 JSON"
+    )
+    runtime_validate.add_argument("--debug", action="store_true", help="输出调试日志")
+    runtime_validate.set_defaults(handler=_handle_runtime_validate)
+
     return parser
 
 
@@ -46,8 +104,43 @@ def _handle_bootstrap(args: argparse.Namespace) -> int:
     return run_bootstrap(load_context(), dry_run=args.dry_run, as_json=args.as_json)
 
 
+def _handle_roles_ensure_defaults(args: argparse.Namespace) -> int:
+    return run_roles_ensure_defaults(load_context(), as_json=args.as_json, debug=args.debug)
+
+
+def _handle_roles_list(args: argparse.Namespace) -> int:
+    return run_roles_list(load_context(), as_json=args.as_json, debug=args.debug)
+
+
+def _handle_delegate(args: argparse.Namespace) -> int:
+    return run_delegate(
+        load_context(),
+        backend_name=args.backend,
+        role=args.role,
+        task=args.task,
+        as_json=args.as_json,
+        debug=args.debug,
+    )
+
+
+def _handle_audit_list(args: argparse.Namespace) -> int:
+    return run_audit_list(
+        load_context(),
+        limit=args.limit,
+        as_json=args.as_json,
+        debug=args.debug,
+    )
+
+
+def _handle_runtime_inspect(args: argparse.Namespace) -> int:
+    return run_runtime_inspect(load_context(), as_json=args.as_json, debug=args.debug)
+
+
+def _handle_runtime_validate(args: argparse.Namespace) -> int:
+    return run_runtime_validate(load_context(), as_json=args.as_json, debug=args.debug)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     return int(args.handler(args))
-
