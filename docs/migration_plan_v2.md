@@ -86,7 +86,8 @@ The `architecture-v2` branch is **documentation only** right now. The following 
 - `v2/schemas/inbound.py` — `InboundEvent`
 - `v2/schemas/task.py` — `Task`, `ExecutionRequest`, `ExecutionResult`
 - `v2/schemas/reply.py` — `Reply`
-- `v2/schemas/archive.py` — `TaskArchiveRecord`, `SessionState`
+- `v2/schemas/archive.py` — `TaskArchiveRecord`, `SessionState` (includes current bound `ContainerRecord` reference)
+- `v2/schemas/container.py` — `ContainerRecord` (identity, role binding, lifecycle state, IPC address, max-slot config)
 - `v2/schemas/roles.py` — `RoleSpec`
 - `v2/schemas/capabilities.py` — `CapabilityDescriptor`
 - `v2/schemas/cognition.py` — `CognitionRequest`, `CognitionResult`
@@ -216,16 +217,18 @@ The `architecture-v2` branch is **documentation only** right now. The following 
 
 ## 10. Phase 6: Container Backend
 
-**Goal**: Implement the full container execution backend, following `refs/pyclaw` protocols.
+**Goal**: Implement the full container execution backend, following `refs/pyclaw` protocols. Each container is an LLM-driven role execution instance, not a simple command sandbox.
 
 **Deliverables**:
 
-- `v2/liubu/backends/container.py` — Full container lifecycle management
+- `v2/liubu/backends/container.py` — Full container lifecycle management (start, mount, IPC, recycle)
 - `v2/liubu/container/workspace.py` — Workspace mounting
-- `v2/liubu/container/mounts.py` — Mount control
+- `v2/liubu/container/mounts.py` — Mount control (role assets, skills, artifacts)
 - `v2/liubu/container/secrets.py` — Secret injection
-- `v2/liubu/container/lifecycle.py` — Container start / monitor / stop
-- `v2/liubu/container/ipc.py` — IPC protocol (following `refs/pyclaw/bus/`)
+- `v2/liubu/container/lifecycle.py` — Container start / monitor / stop / recycle
+- `v2/liubu/container/ipc.py` — IPC protocol (following `refs/pyclaw/bus/`): task delivery, status query, supplementary context, interrupt, termination
+- `v2/liubu/container/slots.py` — Active container slot management (global limit + per-role limit; queue/wait when limit exceeded)
+- `v2/liubu/container/writeback.py` — Pre-recycle state writeback: state summary, artifact indexes, results, memory candidates → Archive & State
 - Integration tests requiring a local container runtime.
 
 **Source mapping**:
@@ -234,11 +237,21 @@ The `architecture-v2` branch is **documentation only** right now. The following 
 - `refs/pyclaw/bus/` → IPC reference; reimplement natively.
 - `backends/pyclaw_container.py` → Discard; replace with redesigned implementation.
 
+**Design rules**:
+
+- The container-internal LLM is responsible for task refinement, step planning, tool invocation, intermediate judgment, and result generation. The Zhongshu Sheng does not intervene in these internal decisions.
+- The Zhongshu Sheng communicates with containers via IPC only. IPC messages carry: new task assignments, supplementary context, status queries, interrupt signals, and termination commands.
+- A `Session` should be routed to its currently bound `Container` whenever possible. Container slot management must track which session is bound to which container.
+- Containers must write back all persistent state before being recycled.
+
 **Done criteria**:
 
 - A task can be delegated to a container backend using V2 schema types.
-- Container lifecycle (start, execute, collect result, stop) completes without errors.
+- The container-internal LLM completes the task and produces an `ExecutionResult` via IPC.
+- Session binding is preserved: a subsequent request to the same session routes to the same container.
+- When the active container limit is reached, new tasks queue rather than spawning additional containers.
 - Secrets are not written to disk outside the container scope.
+- Container writeback completes before recycle.
 
 ---
 
@@ -376,6 +389,8 @@ v2/                             ← new V2 implementation
       secrets.py
       lifecycle.py
       ipc.py
+      slots.py                  ← active container slot management + queuing
+      writeback.py              ← pre-recycle state writeback to archive
     tools/
       registry.py
       specs.py

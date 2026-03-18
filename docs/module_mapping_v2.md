@@ -183,7 +183,7 @@ Action categories:
 **Notes**:
 
 - `backends/host.py` is functional and reusable; migrate to Liubu Host Backend in Phase 5.
-- `backends/pyclaw_container.py` currently only validates prerequisites; it does not execute real container workloads. In V2, the container backend should be redesigned following `refs/pyclaw` protocols to implement full container lifecycle management.
+- `backends/pyclaw_container.py` currently only validates prerequisites; it does not execute real container workloads. In V2, the container backend should be redesigned following `refs/pyclaw` protocols to implement full container lifecycle management. Critically, V2 containers are **LLM-driven role execution instances** — each container runs its own LLM that handles task refinement, step planning, tool invocation, and result generation internally. The container backend must support IPC-based communication for task delivery, status queries, and termination signals, and must enforce a maximum active container limit per role and globally.
 
 ---
 
@@ -240,7 +240,7 @@ Action categories:
 
 | V2 Module | Sources (Current Files) | Primary Action |
 |-----------|------------------------|----------------|
-| Data Schema (奏折) | `models.py`, `delegate_command.py` types | `REDESIGN` (expand and strictly type) |
+| Data Schema (奏折) | `models.py`, `delegate_command.py` types | `REDESIGN` (expand and strictly type; add `ContainerRecord`, `SessionState` with container binding) |
 | Tongzhengsi (Ingress) | `cli.py`, channel adapters | `REDESIGN` (ingress → InboundEvent) |
 | Zhongshu Sheng — Orchestration | `delegate_command.py` core logic | `MIGRATE LATER` + `SPLIT` |
 | Zhongshu Sheng — Cognition | `runtime_bridge.py` | `REDESIGN` (stable interface) |
