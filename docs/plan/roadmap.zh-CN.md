@@ -10,6 +10,7 @@
 
 - `docs/architecture/zh/architecture-overview.md` — V2 架构规范参考
 - `docs/mapping/main-to-v2-mapping.zh-CN.md` — 当前模块到 V2 模块的映射与操作分类
+- `docs/plan/phase-0-5-completion-matrix.zh-CN.md` — Phase 0~5 完成度对照表（交付物→实现文件→测试/验证）
 
 ---
 
