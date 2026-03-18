@@ -25,6 +25,10 @@ class ProjectContext:
     def runtime_tasks_dir(self) -> Path:
         return self.runtime_dir / "tasks"
 
+    @property
+    def workspace_dir(self) -> Path:
+        return self.runtime_dir / "workspace"
+
 
 def load_context() -> ProjectContext:
     project_root = Path(__file__).resolve().parents[1]

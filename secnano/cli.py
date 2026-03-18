@@ -82,7 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
     delegate_parser.add_argument(
         "--backend",
         required=True,
-        choices=["host", "pyclaw_container"],
+        choices=["host", "pyclaw_container", "subprocess"],
         help="委派后端名称",
     )
     delegate_parser.add_argument("--role", required=True, help="角色名称")

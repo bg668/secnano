@@ -7,7 +7,7 @@ import logging
 from uuid import uuid4
 
 from secnano.archive import TaskArchiveStore
-from secnano.backends import HostBackend, PyclawContainerBackend, SubagentBackend
+from secnano.backends import HostBackend, PyclawContainerBackend, SubagentBackend, SubprocessBackend
 from secnano.context import ProjectContext
 from secnano.logging_utils import setup_logging
 from secnano.models import DelegateRequest, TaskArchiveRecord
@@ -20,6 +20,7 @@ def _backend_registry(ctx: ProjectContext) -> dict[str, SubagentBackend]:
     return {
         "host": HostBackend(),
         "pyclaw_container": PyclawContainerBackend(ctx),
+        "subprocess": SubprocessBackend(ctx),
     }
 
 
