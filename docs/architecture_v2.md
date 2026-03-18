@@ -44,9 +44,12 @@ The current `main` implementation has accumulated several design compromises:
 
 ### 3.1 Single Controller
 
-The system exposes exactly **one main controller agent** to the outside world.
-Roles are temporary execution units dispatched by that controller — they are not parallel agents.
+The system exposes exactly **one main controller agent** (the Zhongshu Sheng) to the outside world.
+The controller is **LLM-driven** — it reasons, maintains memory, and uses skills to make scheduling decisions. It is not a deterministic rule engine.
+Role execution containers in the Six Ministries are dispatched by that controller — they are not parallel agents.
 All new capabilities must be registered through the capability adapter layer and remain subordinate to the single controller.
+
+When a session already has an active execution container, the controller routes requests to that container first to preserve execution context continuity. Container re-assignment only happens on failure, timeout, or explicit policy.
 
 ### 3.2 Stable Data Contracts
 
@@ -57,8 +60,13 @@ No module reaches into another module's internal state.
 
 ### 3.3 Ephemeral Execution, Persistent Assets
 
-Execution instances (containers, host processes) are temporary.
-Role assets (SOUL, ROLE, MEMORY, skills, POLICY) and task archives are the long-lived continuity of the system.
+Three objects span different time horizons:
+
+- **Roles** are permanent responsibility definitions. They survive indefinitely across all sessions and container instances.
+- **Containers** are short-lived runtime execution instances. They are resource-constrained and recyclable. They do not outlive their work.
+- **Sessions** are medium-term task continuity objects. They are more stable than a single container but more concrete than a role definition. A session binds to a container while it is active; the binding can migrate if necessary.
+
+Role assets (SOUL, ROLE, MEMORY, skills, POLICY) and task archives are the long-lived continuity of the system. Containers hold only temporary runtime state; all persistent state must be written back to the Archive & State module before a container is recycled.
 
 ### 3.4 Architecture Topology: Court and Government
 
@@ -83,23 +91,30 @@ External World
 └────────────────┬────────────────┘
                  │  InboundEvent
                  ▼
-┌─────────────────────────────────┐
-│  中书省 (Zhongshu Sheng)         │  ← Controller + Brain (Orchestrator + Cognition)
-│  Decides what to do;            │
-│  assembles prompts; calls model; │
-│  dispatches execution           │
-└──┬──────────┬──────────┬────────┘
-   │          │          │
-   │  queries │ dispatches│  archives
-   ▼          ▼          ▼
-┌──────┐  ┌───────┐  ┌────────────┐
-│翰林院 │  │ 六部  │  │奏折 / 档案  │
-│史馆  │  │(Liubu)│  │(Archive)   │
-│RAG  │  │Exec + │  │Task Records│
-│+Mem │  │Tools  │  │+ State     │
-└──────┘  └───────┘  └────────────┘
-                 │
-                 ▼ ExecutionResult
+┌──────────────────────────────────────────────────────────┐
+│  中书省 (Zhongshu Sheng)  — LLM-driven Controller + Brain │
+│  • Owns global context, session state, system-level rules │
+│  • Decides: reply directly / follow-up / delegate         │
+│  • Has own memory, skills, and controller-level tools     │
+│  • Routes requests to session-bound containers (IPC)      │
+└──┬────────────────┬─────────────────────┬────────────────┘
+   │ queries        │ IPC ExecutionRequest │ archives
+   ▼                ▼                     ▼
+┌──────────┐  ┌──────────────────────┐  ┌────────────────┐
+│ 翰林院   │  │  六部 (Liubu)         │  │ 档案 / Archive │
+│ 史馆     │  │  Role Execution Units │  │ Task Records   │
+│ RAG +    │  │  ┌─────────────────┐ │  │ + State        │
+│ Memory   │  │  │ Container A     │ │  └────────────────┘
+└──────────┘  │  │ (Role: X) [LLM] │ │
+              │  └─────────────────┘ │
+              │  ┌─────────────────┐ │
+              │  │ Container B     │ │
+              │  │ (Role: Y) [LLM] │ │
+              │  └─────────────────┘ │
+              │  max-N active slots  │
+              └──────────┬───────────┘
+                         │ ExecutionResult
+                         ▼
 ┌─────────────────────────────────┐
 │  门下省 (Menxia Sheng)           │  ← Validator / Output Guard
 │  Validates, filters, and        │
@@ -128,7 +143,8 @@ Key schemas:
 | `ExecutionResult` | The result returned from execution |
 | `Reply` | The final structured response sent to the user |
 | `TaskArchiveRecord` | A persisted record of a completed task |
-| `SessionState` | Resumable orchestrator session data |
+| `SessionState` | Resumable orchestrator session data, including the current bound `ContainerRecord` |
+| `ContainerRecord` | Identity, role binding, lifecycle state, and IPC address of a running container |
 | `RoleSpec` | A role's assets: SOUL, ROLE, MEMORY, skills, POLICY |
 | `CapabilityDescriptor` | A registered capability's identity and interface contract |
 
@@ -182,36 +198,49 @@ Replaces part of the *输入输出模块* (I/O Module, Module 1) from the origin
 
 **Role in V2**:
 
-This is the **central orchestrator and cognition core**, unified into one logical component but split into two sub-layers:
+The Zhongshu Sheng is the **only externally-facing main controller agent** in the system. It is simultaneously the global scheduling hub and the primary reasoning brain. It is LLM-driven — meaning the controller itself is powered by a language model and is not a deterministic rule engine.
 
-#### 4.4.1 Orchestration Sub-layer (Controller)
+#### 4.4.1 Responsibilities
 
-Responsibilities:
+- Receives all `InboundEvent` objects from Tongzhengsi and performs task understanding.
+- Maintains the controller's global context, session state, and system-level rules.
+- Makes scheduling decisions based on task type, role capabilities, historical state, and current context.
+- Decides whether a task should be:
+  - Handled directly with a reply.
+  - Followed up with a clarifying question.
+  - Delegated to a specific execution container in the Six Ministries.
+- Tracks task status, receives `ExecutionResult` objects, and decides whether to continue delegating, terminate, or assemble a final reply.
 
-- Receives `InboundEvent` from Tongzhengsi.
-- Manages session state.
-- Decides: direct reply, sub-task delegation, or execution request.
-- Selects roles and constructs `ExecutionRequest` objects.
-- Validates `ExecutionResult` from the Six Ministries.
-- Assembles the final `Reply`.
+#### 4.4.2 Capabilities
 
-#### 4.4.2 Cognition Sub-layer (Brain)
+The Zhongshu Sheng is not a stateless dispatcher. It has:
 
-Responsibilities:
+- **Own memory module**: Stores system-level long-term rules, cross-task experience, scheduling history, and necessary summaries. This is the controller's memory — distinct from role memories managed in the Hanlin/Shiguan layer.
+- **Own skill set**: Skills used to perform task decomposition, role selection, status checking, result acceptance, and re-delegation decisions.
+- **Controller-level tools**: Tools available to the main controller for orchestration purposes (e.g., inspect session state, query archive, check container availability).
 
-- Assembles prompts from role assets, memory, and task context.
-- Executes the multi-turn LLM call loop.
-- Manages tool-calling feedback cycles.
-- Produces structured intermediate results and natural language conclusions.
+#### 4.4.3 Session Routing Principle
 
-Design rules:
+The Zhongshu Sheng applies the following routing principle for session-bearing requests:
 
-- The controller does not import LLM provider internals; it calls the cognition sub-layer through a stable internal interface.
-- The cognition sub-layer does not import orchestration state; it receives a self-contained cognition request and returns a cognition result.
-- Agent frameworks (`nanobot` or any future SDK) are called **from inside** the cognition sub-layer only, as a library. They do not own any other layer's concerns.
+- For requests that already have an active `Session`, the controller **should preferentially route the task to the container currently bound to that session**.
+- This preserves execution context continuity and avoids the state loss, memory fragmentation, and execution drift that result from frequently switching containers.
+- The controller **only re-assigns a new container** for a session when:
+  - The original container has failed, been recycled, or timed out.
+  - The original container is resource-constrained.
+  - Policy explicitly requires migration to a different container.
+
+When a re-assignment is necessary, the controller recovers the necessary context from the Archive & State module before binding the session to the new container.
+
+#### 4.4.4 Boundaries
+
+- The Zhongshu Sheng is responsible for **global scheduling and delegation decisions**.
+- It does **not** directly carry out the concrete execution steps inside the Six Ministries.
+- It does **not** intervene in the container-internal step-level scheduling, tool selection order, or intermediate execution details.
+- Once a task enters an execution container, the specific execution process is completed by the role official running inside that container.
 
 **Relationship to previous modules**:  
-Merges and refines the *编排调度模块* (Orchestration Module, Module 3) and *认知内核模块* (Cognition Core Module, Module 4) from the original seven-module design, with clearer internal boundaries.
+Merges and refines the *编排调度模块* (Orchestration Module, Module 3) and *认知内核模块* (Cognition Core Module, Module 4) from the original seven-module design. V2 makes the LLM-driven nature of the controller explicit, adds the session routing principle, and draws a clear boundary between what the controller decides and what the container executes.
 
 ---
 
@@ -248,38 +277,79 @@ Extracts and formalises the memory and retrieval concerns that were scattered ac
 
 ---
 
-### 4.6 六部 (Liubu) — Six Ministries / Execution + Tools
+### 4.6 六部 (Liubu) — Six Ministries / Role Execution System
 
-**Historical reference**: The *Liubu* (六部, Six Ministries) were the executive branches of imperial government: Personnel, Revenue, Rites, War, Justice, and Works. They carried out specific categories of concrete action.
+**Historical reference**: The *Liubu* (六部, Six Ministries) were the executive branches of imperial government: Personnel, Revenue, Rites, War, Justice, and Works. Each ministry had specific officials who carried out concrete government work.
 
 **Role in V2**:
 
-This module is the **execution and tool layer**:
+The Six Ministries are the system's **role execution system**. The execution officials inside the Six Ministries are not static role definitions — they are **role execution instances** that mount role assets and run inside isolated containers.
 
-- Receives `ExecutionRequest` from the Zhongshu Sheng.
-- Prepares the execution environment (container or host).
-- Mounts role assets, workspaces, and artifacts.
-- Injects secrets.
-- Dispatches tool calls.
-- Returns `ExecutionResult`.
+#### 4.6.1 Responsibilities
+
+- Accept tasks delegated by the Zhongshu Sheng.
+- Complete task refinement, step planning, tool invocation, and result production inside an isolated execution environment.
+- Maintain the local execution context and continue processing subsequent commands from the same `Session`.
+- Write back execution results, artifact indexes, state summaries, and memory promotion candidates after task completion.
+
+#### 4.6.2 Execution Entity Definition
+
+The "officials" in the Six Ministries are **runtime container instances**, not abstract role files.
+
+- Each execution container, when started, **must mount the role assets** of its assigned role.
+- Role assets include at minimum: responsibility description, prompt, long-term memory, skills, policy, tool permissions, and the necessary working directory.
+- A container is not a simple command-execution sandbox — it is the **runtime carrier for a role execution official**, with its own LLM, tools, memory, and local state.
+
+#### 4.6.3 Container-Internal Execution Principle
+
+Once a task enters a container, **the specific execution process is completed by the LLM running inside the container**.
+
+The container-internal LLM is responsible for:
+
+- Task refinement
+- Step planning
+- Tool invocation
+- Intermediate result judgment
+- Result generation and artifact production
+
+The external controller (Zhongshu Sheng) is only responsible for: "**whether to delegate, to whom, and what resource bounds apply**".
+
+The container interior is responsible for: "**how specifically to complete the task**".
+
+#### 4.6.4 Parallel Control
+
+The parallel capacity of the Six Ministries execution system is controlled by the **maximum number of active containers**:
+
+- Each active container represents one available execution official seat.
+- The system can set a global container limit or a per-role container limit to control the concurrent execution scale at any moment.
+- Tasks that exceed the limit should enter a waiting, queued, or deferred scheduling state — not trigger unbounded container expansion.
+
+#### 4.6.5 Communication and Lifecycle
+
+- Execution containers communicate with the external system through **IPC**.
+- IPC is used to: receive new tasks, respond to status queries, receive supplementary context, handle interrupt signals, and receive termination commands.
+- Containers should be treated as **persistently interactive execution units**, not one-shot script processes.
+- The same container can continue processing subsequent tasks in the same `Session` throughout its lifecycle.
+- A container should be recycled when: the task is complete, the container exits voluntarily, or the container has been inactive for an extended period.
+- **Before recycling, a container must write back**: necessary state summaries, key artifact indexes, execution results, and memory promotion candidates to the Archive & State module.
 
 Sub-components:
 
 | Sub-component | Responsibility |
 |---------------|---------------|
-| Host Backend | Direct in-process execution |
-| Container Backend | Isolated container execution (references `pyclaw`/`nanoclaw` protocols) |
+| Container Backend | Role container lifecycle: start, mount assets, IPC, recycle |
+| Host Backend | Direct in-process execution (for lightweight tasks) |
 | Tool Registry | Tool definitions, execution dispatch, permission enforcement |
 | Artifact Manager | Workspace mounting, artifact collection, result packaging |
 
-Design rules:
+#### 4.6.6 Boundaries
 
-- The Six Ministries receive orders; they do not decide what orders to create.
-- They do not call the LLM directly.
-- Container protocols and IPC follow the reference designs in `refs/pyclaw` and `refs/nanoclaw`.
+- The Six Ministries execution system is responsible for execution — not for global scheduling.
+- Execution containers are **not** exposed directly as new user-facing entry points.
+- All Six Ministries officials must serve the unified scheduling of the Zhongshu Sheng and must not form a parallel second control system.
 
 **Relationship to previous modules**:  
-Corresponds to the *执行模块* (Execution Module, Module 6) and *工具注册模块* (Tool Registry Module) from the original design, now formally unified as a single execution + tools boundary.
+Corresponds to the *执行模块* (Execution Module, Module 6) and *工具注册模块* (Tool Registry Module) from the original design. V2 makes explicit that containers are LLM-driven role execution instances (not simple command runners), adds the parallel control mechanism, and formalises the IPC-based lifecycle.
 
 ---
 
@@ -313,6 +383,80 @@ Design rules:
 
 **Relationship to previous modules**:  
 This is a **new formal module** in V2. In the original seven-module design, output validation was implicit (part of the I/O module or the orchestrator). V2 makes it an explicit, testable boundary.
+
+---
+
+### 4.8 Role / Container / Session — Three-Layer Relationship
+
+`Role`, `Container`, and `Session` represent three distinct levels of object. They must be strictly differentiated.
+
+#### 4.8.1 Role
+
+A `Role` is a **static role definition** representing the responsibility boundary and capability profile of an execution official.
+
+Contents:
+
+- Responsibility description
+- Prompt
+- Long-term memory
+- Skills
+- Tool permissions
+- Resource scope
+- Security policy
+
+Constraints:
+
+- A `Role` is not a runtime instance.
+- The same `Role` can be reused by multiple execution containers.
+- A `Role` is a long-term stable responsibility identity — it does not directly equal any specific execution run.
+
+#### 4.8.2 Container
+
+A `Container` is the **runtime instantiation carrier** of a `Role`. It is the dynamic execution entity that actually accepts tasks and maintains local execution context.
+
+Characteristics:
+
+- A `Container` mounts the assets of its assigned `Role` at startup.
+- A `Container` holds its runtime context, temporary state, and execution artifacts throughout its lifecycle.
+- A `Container` is resource-constrained and recyclable — it is not a permanent identity.
+- A `Container` is the actual execution official instance that completes tasks.
+
+Constraints:
+
+- One `Container` belongs to exactly one `Role`.
+- One `Role` can correspond to multiple `Container` instances.
+- A `Container` is a short-lived execution instance and must not be treated as a permanent identity object.
+
+#### 4.8.3 Session
+
+A `Session` is the **logical identity of task continuity**, used to ensure that multiple rounds of requests belong to the same work chain logically.
+
+Characteristics:
+
+- A `Session` represents the context continuum of a segment of continuous task processing.
+- A `Session` is not directly equal to a `Role`.
+- A `Session` is not directly equal to a `Container`.
+- A `Session` is maintained by the Zhongshu Sheng and used to route multi-round requests to the appropriate execution context.
+
+Default binding:
+
+- An active `Session` should preferentially be bound to one specific `Container` at any given moment.
+- Subsequent requests under the same `Session` should, in principle, continue to be sent to the currently bound `Container`.
+- This binding maintains task context, local memory, and the continuity of in-progress execution state.
+
+Migration rules:
+
+- When the original `Container` fails, is recycled, times out, or is no longer suitable for the current task, the Zhongshu Sheng may re-assign a new `Container` for the `Session`.
+- During re-assignment, necessary context should be restored through the Archive & State module.
+- After re-assignment, the original `Role` may continue to be used, or a new `Role` may be selected based on task changes.
+
+Long-term vs. short-term boundary:
+
+| Object | Nature | Stability |
+|--------|--------|-----------|
+| `Role` | Long-term stable responsibility identity | Permanent — survives across all sessions and containers |
+| `Container` | Short-lived runtime execution instance | Ephemeral — recycled when idle or done |
+| `Session` | Task continuity object between the two | Medium-term — more stable than a single container, more concrete than a role definition |
 
 ---
 
