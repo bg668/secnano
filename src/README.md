@@ -1,3 +1,3 @@
 # src
 
-Reserved for formal V2 implementation only.
+Contains formal V2 implementation modules.

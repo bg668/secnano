@@ -1,6 +1,6 @@
 # secnano architecture-v2
 
-This branch is a clean V2 workspace for architecture definition, migration governance, and future implementation scaffolding.
+This branch started as a clean V2 workspace for architecture definition, migration governance, and future implementation scaffolding, and now includes the V2 runnable implementation defined by the roadmap.
 
 ## Workspace layout
 
@@ -10,7 +10,10 @@ This branch is a clean V2 workspace for architecture definition, migration gover
 - `docs/migration/` — branch migration strategy and branch-purpose guidance
 - `docs/decisions/` — architecture decision records for V2 governance
 - `refs/legacy-index.md` — lightweight reference index pointing back to useful legacy areas on `main`
-- `src/`, `tests/`, `scripts/` — empty placeholders reserved for formal V2 implementation only
+- `src/v2/` — V2 runnable implementation (schemas, ingress, archive, roles, execution backend, cognition, guard, CLI wiring)
+- `secnano_v2/` — command compatibility module for `python -m secnano_v2`
+- `tests/v2/` — V2 unit and integration tests
+- `scripts/` — reserved for project scripts
 
 ## Branch boundary
 
