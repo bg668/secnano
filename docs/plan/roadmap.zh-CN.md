@@ -15,24 +15,38 @@
 
 ## 2. 指导原则
 
-在阅读各阶段之前，请注意以下贯穿整个迁移过程的约束：
+### 2.1 Agent 守则
 
-### 2.1 当前阶段的非目标（仅设计）
+以下守则在每个阶段无一例外地适用：
 
-`architecture-v2` 分支当前**仅为文档**。以下内容在 Phase 1 开始之前明确排除在外：
+- **围绕主链路做最小闭环，不做孤立模块** — 不构建无法端到端验证的孤立模块。
+- **框架优先，业务只做样例** — 结构和契约先于实际逻辑；实际逻辑在后续阶段逐步引入。
+- **stub/mock 必须守正式接口，不能乱写占位** — 占位实现必须与真实实现遵循相同的类型和签名。
+- **每次交付必须可运行、可观察、可验收，并附验证命令** — 每个阶段提供验证命令，用于演练当前主链路。
+- **角色只做最小职责，RAG 只做 mock** — 翰林院/史馆层在整个核心阶段保持为接口兼容的 mock；真实检索引擎是可选的未来扩展。
+- **refs/ 只参考，不直接整体复制** — 不从 `refs/pyclaw` 或 `refs/nanoclaw` 整体复制；学习并重新实现。
 
-- **不批量移植现有 `secnano/` 实现**。整体复制文件会带入 V2 旨在修复的设计妥协。
-- **不过早锁定单一 Agent 框架**。在确定使用 `nanobot` 或任何替代方案之前，中书省认知子层接口必须稳定。
-- **在数据 Schema（奏折）达成共识之前不开始实现**。所有其他模块依赖契约类型；在 schema 确定前构建它们是浪费努力。
-- **不修改 `main`** 作为 V2 工作的一部分。V2 是一个干净的设计分支；`main` 按自己的里程碑路线继续。
-- **不将 `refs/pyclaw` 或 `refs/nanoclaw` 的代码作为生产代码导入**。它们仅是参考材料。
+### 2.2 主链路
 
-### 2.2 所有阶段均适用的原则
+每个阶段都要保持以下链路端到端可运行。从 Phase 1 起，每个节点以 stub 或真实实现的形式存在——从不缺席：
 
-- 每个阶段产出可工作、可测试的交付物——而不仅仅是代码桩。
-- 每个阶段维护 `../architecture/zh/architecture-overview.md` 中定义的模块边界规则。
-- 每个模块在下一个模块依赖它之前，先在其契约接口后面实现。
-- 从第一个集成测试开始，单一主控约束就要被强制执行。
+```
+CLI → InboundEvent → Orchestrator → Cognition → ExecutionRequest
+    → Host Backend → ExecutionResult → Archive → Reply → Guard → CLI Output
+
+Phase 1：所有节点为接口兼容的 stub
+Phase 2：CLI 和 Archive 替换为真实实现
+Phase 3：Host Backend 替换为真实实现
+Phase 4：Orchestrator 和 Cognition 替换为真实实现
+Phase 5：Guard 替换为真实实现
+```
+
+### 2.3 非目标
+
+- 不批量移植现有 `secnano/` 实现。整体复制会带入 V2 旨在修复的设计妥协。
+- 在认知接口稳定之前，不过早锁定单一 Agent 框架。
+- 不修改 `main` 作为 V2 工作的一部分。
+- 不将 `refs/pyclaw` 或 `refs/nanoclaw` 的代码作为生产代码导入。
 
 ---
 
@@ -41,21 +55,19 @@
 | 阶段 | 名称 | 目标 | 先决条件 |
 |------|------|------|---------|
 | 0 | 架构冻结 | 设计文档完成并达成共识 | — |
-| 1 | 数据 Schema 定义 | 所有 V2 契约类型定义并校验 | Phase 0 |
-| 2 | 入口（通政司） | CLI 和初始通道适配器产出 InboundEvent | Phase 1 |
-| 3 | 归档与角色 | 归档、角色资产加载和记忆提升完成迁移 | Phase 1 |
-| 4 | RAG 与记忆检索 | 翰林院/史馆检索层可运行 | Phase 3 |
-| 5 | 执行与工具（六部） | Host backend + 工具注册表端到端运行 | Phases 2 & 3 |
-| 6 | 容器 Backend | 使用 pyclaw 协议的完整容器生命周期 | Phase 5 |
-| 7 | Provider 与认知 | AI Provider 抽象 + 中书省认知重新设计 | Phases 1 & 5 |
-| 8 | 输出守卫（门下省） | 输出校验门集成到回复路径 | Phase 7 |
-| 9 | 最终迁移与整合 | 端到端 V2 流水线；废弃主兼容垫片 | 所有阶段 |
+| 1 | Schema + 主链路骨架 | 最小契约定义完毕；全链路以 stub 可运行 | Phase 0 |
+| 2 | 入口 + 归档 | 真实 CLI 解析和真实任务持久化 | Phase 1 |
+| 3 | 执行（六部 Host） | 真实 host backend + 工具注册表 | Phase 2 |
+| 4 | 认知（中书省） | 真实 LLM 编排 + AI Provider 抽象 | Phase 3 |
+| 5 | 输出守卫 + 集成 | 真实门下省校验门；全链路验证 | Phase 4 |
+
+容器 backend（完整 LLM 驱动的容器生命周期）是 **Phase 5 之后的扩展**，延后至主链路稳定且确认需要容器执行后再实施。
 
 ---
 
 ## 4. Phase 0：架构冻结
 
-**状态**：进行中（本分支）。
+**状态**：已完成。
 
 **目标**：完成并达成 V2 架构设计文档共识。
 
@@ -71,368 +83,274 @@
 - 模块边界、数据契约和依赖规则已达成共识。
 - 没有修改任何实现代码。
 
-**本阶段非目标**：
-
-- 不创建或修改 Python 文件（文档除外）。
-- 不编写测试。
-- 不修改 CLI。
-
 ---
 
-## 5. Phase 1：数据 Schema 定义
+## 5. Phase 1：Schema + 主链路骨架
 
-**目标**：定义所有 V2 契约类型。所有后续阶段都依赖这些类型。
+**目标**：定义主链路所需的最小契约类型，然后以接口兼容的 stub 连通每个模块，使链路从第一次提交起就能端到端运行。
 
 **交付物**：
+
+Schema（仅契约——不含业务逻辑）：
 
 - `src/v2/schemas/inbound.py` — `InboundEvent`
 - `src/v2/schemas/task.py` — `Task`、`ExecutionRequest`、`ExecutionResult`
 - `src/v2/schemas/reply.py` — `Reply`
-- `src/v2/schemas/archive.py` — `TaskArchiveRecord`、`SessionState`（包含当前绑定的 `ContainerRecord` 引用）
-- `src/v2/schemas/container.py` — `ContainerRecord`（标识、角色绑定、生命周期状态、IPC 地址、最大槽位配置）
+- `src/v2/schemas/archive.py` — `TaskArchiveRecord`
 - `src/v2/schemas/roles.py` — `RoleSpec`
-- `src/v2/schemas/capabilities.py` — `CapabilityDescriptor`
 - `src/v2/schemas/cognition.py` — `CognitionRequest`、`CognitionResult`
-- 验证 schema 构造、序列化和不可变性的单元测试。
+
+Stub（接口兼容，不是随意占位字符串）：
+
+- `src/v2/tongzhengsi/cli_channel.py` — stub：从 argv 读取 `--role` 和 `--task`，返回硬编码 `InboundEvent`
+- `src/v2/zhongshu/orchestrator.py` — stub：接收 `InboundEvent`，返回硬编码 `ExecutionRequest` 和 `Reply`
+- `src/v2/zhongshu/cognition/stub.py` — stub：`CognitionRequest` → 固定 `CognitionResult`
+- `src/v2/liubu/backends/host.py` — stub：`ExecutionRequest` → 固定 `ExecutionResult`
+- `src/v2/hanlin/retriever.py` — mock（核心阶段 1–5 全程保持 mock）：`query(str) → []`；真实检索是 Phase 6+ 的可选扩展，遵循 Agent 守则
+- `src/v2/archive/writer.py` — stub：将 `TaskArchiveRecord` 写为 JSON 文件至 `runtime/tasks/`
+- `src/v2/menxia/guard.py` — stub：原样通过任何 `Reply`
+- `src/v2/__main__.py` — 入口：将所有 stub 连通为主链路
+
+测试：
+
+- 单元测试：schema 构造、字段类型、冻结不可变性。
+- 冒烟测试：全链路 stub 运行产出 `Reply` 并生成归档文件。
 
 **设计规则**：
 
-- 所有 schema 必须是不可变值对象（使用 `@dataclass(frozen=True)` 或 Pydantic `BaseModel` with `model_config = ConfigDict(frozen=True)`）。
-- schema 内部不包含业务逻辑。
-- 除同级 schema 外，不从任何其他 V2 模块导入。
+- 每个 stub 必须导入并实例化它所产出的 schema 类型——不使用裸 dict 或无类型字符串。
+- 翰林院 mock 返回空列表，在核心阶段不替换（RAG 只做 mock）。
+- 编排器 stub 必须按顺序调用认知 stub 和 host backend stub，从第一天起链路结构就是正确的。
 
 **完成标准**：
 
-- 所有 schema 文件存在并包含完整的字段定义。
+- `python -m secnano_v2 delegate --role demo --task "hello"` 向 stdout 打印回复，并写入 JSON 归档文件。
 - 单元测试通过。
-- 每个 schema 至少一个序列化往返测试。
+
+**验证命令**：
+
+```bash
+python -m secnano_v2 delegate --role demo --task "hello"
+# 预期：打印 Reply 内容；生成 runtime/tasks/<task_id>.json
+```
 
 ---
 
-## 6. Phase 2：入口（通政司）
+## 6. Phase 2：入口 + 归档
 
-**目标**：构建通政司（Tongzhengsi）入口层。CLI 输入产出经校验的 `InboundEvent` 对象。
+**目标**：用真实 CLI 解析替换通政司 stub，用真实文件持久化替换归档 stub。
 
 **交付物**：
 
-- `src/v2/tongzhengsi/__init__.py`
-- `src/v2/tongzhengsi/cli_channel.py` — 产出 `InboundEvent` 的 CLI 参数解析器
+- `src/v2/tongzhengsi/cli_channel.py` — 真实 CLI 参数解析器，产出经校验的 `InboundEvent`
 - `src/v2/tongzhengsi/validator.py` — 输入校验与规范化
 - `src/v2/tongzhengsi/errors.py` — 结构化入口错误类型
-- 单元测试：有效输入 → `InboundEvent`；无效输入 → 结构化错误。
+- `src/v2/archive/writer.py` — 真实 `TaskArchiveRecord` 持久化（JSON 文件写入 `runtime/tasks/`）
+- `src/v2/archive/reader.py` — 归档查询读接口
+- `src/v2/roles/loader.py` — 角色资产加载（`SOUL`、`ROLE`、`MEMORY`、`POLICY` 文件 → `RoleSpec`）
 
-**来源映射**：从 `secnano/cli.py` 重新设计。
+测试：
 
-**设计规则**：
+- 有效 CLI 输入 → `InboundEvent`；格式不合规输入 → 结构化错误，而非堆栈跟踪。
+- 归档往返：写入后读回相同的 `TaskArchiveRecord`。
+- 角色加载器：缺少必要文件时抛出结构化错误。
 
-- 通政司不得调用 LLM、加载角色资产或访问归档。
-- 输出始终是有效的 `InboundEvent` 或结构化的入口错误。
-- 未来通道（API、Slack 等）作为额外通道适配器添加到本模块中。
-
-**完成标准**：
-
-- `python -m secnano_v2 delegate --role <role> --task "<task>"` 产出有效的 `InboundEvent`。
-- 格式不合规的输入产出结构化错误，而不是堆栈跟踪。
-
----
-
-## 7. Phase 3：归档与角色
-
-**目标**：将归档持久层和角色资产加载迁移到 V2 中。
-
-**交付物**：
-
-- `src/v2/archive/tasks.py` — `TaskArchiveRecord` 持久化（JSON 或 SQLite）
-- `src/v2/archive/sessions.py` — `SessionState` 持久化
-- `src/v2/archive/queries.py` — 归档查询读接口
-- `src/v2/roles/loader.py` — 角色资产加载（SOUL、ROLE、MEMORY、技能、POLICY）
-- `src/v2/roles/registry.py` — 内存角色注册表
-- `src/v2/roles/memory.py` — 带过滤规则的记忆提升
-- 单元测试：归档往返；从文件系统加载角色；记忆提升规则。
-
-**来源映射**：
-
-- `archive.py` → `src/v2/archive/tasks.py`（迁移）
-- `roles.py` 加载器 → `src/v2/roles/loader.py`（迁移）
-- `roles.py` promote-memory → `src/v2/roles/memory.py`（拆分）
+**来源映射**：从 `secnano/cli.py`、`archive.py`、`roles.py` 重新设计。
 
 **完成标准**：
 
-- 使用 V2 schema 类型可以写入和读取归档记录。
-- 从 `roles/` 目录加载角色资产到 `RoleSpec` 对象。
-- 记忆提升只将经过过滤的洞见写入 `MEMORY.md`。
+- `python -m secnano_v2 delegate --role <role> --task "<task>"` 产出有效 `InboundEvent` 并持久化 `TaskArchiveRecord`。
+- `python -m secnano_v2 delegate --role missing` 以结构化错误退出，不产生堆栈跟踪。
+
+**验证命令**：
+
+```bash
+python -m secnano_v2 delegate --role demo --task "write a hello world"
+cat runtime/tasks/*.json          # 归档文件存在且为有效 JSON
+
+python -m secnano_v2 delegate     # 缺少必填参数
+# 预期：结构化错误，退出码 != 0
+```
 
 ---
 
-## 8. Phase 4：RAG 与记忆检索（翰林院 / 史馆）
+## 7. Phase 3：执行（六部 Host Backend）
 
-**目标**：构建向认知子层提供上下文的翰林院/史馆检索层。
-
-**交付物**：
-
-- `src/v2/hanlin/__init__.py`
-- `src/v2/hanlin/retriever.py` — 对已归档记录和角色记忆的查询接口
-- `src/v2/hanlin/indexer.py` — 索引管理（简单关键词或基于嵌入）
-- `src/v2/hanlin/memory_gate.py` — 提升过滤规则（只有经过过滤的洞见 → 长期记忆）
-- 单元测试：检索查询返回相关记录；提升门拒绝未过滤的原始输出。
-
-**设计规则**：
-
-- 检索层从认知子层的视角来看是只读的（不写入）。
-- 记忆提升只通过 `memory_gate.py` 写入，从不直接写入。
-- 先从简单关键词匹配开始；在后续迭代中添加基于嵌入的检索。
-
-**完成标准**：
-
-- 认知子层可以按关键词查询相关上下文。
-- 记忆门正确阻止原始执行输出进入长期记忆。
-
----
-
-## 9. Phase 5：执行与工具（六部）
-
-**目标**：构建带有可工作 host backend 和工具注册表的六部执行层。
+**目标**：用真实执行 backend 替换 host backend stub，使其能够执行任务并返回结构化 `ExecutionResult`。
 
 **交付物**：
 
-- `src/v2/liubu/__init__.py`
 - `src/v2/liubu/backends/base.py` — `ExecutionBackend` 协议
-- `src/v2/liubu/backends/host.py` — Host 执行 backend
+- `src/v2/liubu/backends/host.py` — 真实 host 执行 backend
 - `src/v2/liubu/tools/registry.py` — 工具定义和调度
 - `src/v2/liubu/tools/specs.py` — 工具 schema 类型
-- `src/v2/liubu/artifacts.py` — 工件收集与打包
-- 集成测试：host backend 接收 `ExecutionRequest`、执行、返回 `ExecutionResult`。
+- `src/v2/archive/writer.py` — 扩展：在 `TaskArchiveRecord` 旁边持久化 `ExecutionResult`
 
-**来源映射**：
+测试：
 
-- `backends/base.py` → `src/v2/liubu/backends/base.py`（迁移）
-- `backends/host.py` → `src/v2/liubu/backends/host.py`（迁移）
-- `adapters/base.py` → 参考 schema 中的 `CapabilityDescriptor` + `src/v2/liubu/backends/base.py`
+- Host backend 接收 `ExecutionRequest`，运行一个简单工具，返回 `ExecutionResult`。
+- 工具注册表列出并调度内置工具。
+- `ExecutionResult` 持久化到归档。
 
-**完成标准**：
-
-- Host backend 使用 V2 schema 类型端到端执行一个简单任务。
-- 工具注册表列出并调度至少一个内置工具。
-- 执行后将 `ExecutionResult` 写入归档。
-
----
-
-## 10. Phase 6：容器 Backend
-
-**目标**：实现完整的容器执行 backend，遵循 `refs/pyclaw` 协议。每个容器是由 LLM 驱动的角色执行实例，而不是简单的命令沙箱。
-
-**交付物**：
-
-- `src/v2/liubu/backends/container.py` — 完整容器生命周期管理（启动、挂载、IPC、回收）
-- `src/v2/liubu/container/workspace.py` — 工作区挂载
-- `src/v2/liubu/container/mounts.py` — 挂载控制（角色资产、技能、工件）
-- `src/v2/liubu/container/secrets.py` — 密钥注入
-- `src/v2/liubu/container/lifecycle.py` — 容器启动 / 监控 / 停止 / 回收
-- `src/v2/liubu/container/ipc.py` — IPC 协议（遵循 `refs/pyclaw/bus/`）：任务投递、状态查询、补充上下文、中断、终止
-- `src/v2/liubu/container/slots.py` — 活跃容器槽位管理（全局上限 + 按角色上限；超出上限时排队/等待）
-- `src/v2/liubu/container/writeback.py` — 回收前状态回写：状态摘要、工件索引、结果、记忆候选 → 归档与状态
-- 需要本地容器运行时的集成测试。
-
-**来源映射**：
-
-- `refs/pyclaw/container_runner.py` → 仅作为协议参考；原生重新实现。
-- `refs/pyclaw/bus/` → IPC 参考；原生重新实现。
-- `backends/pyclaw_container.py` → 废弃；用重新设计的实现替代。
-
-**设计规则**：
-
-- 容器内 LLM 负责任务细化、步骤规划、工具调用、中间判断和结果生成。中书省不介入这些内部决策。
-- 中书省仅通过 IPC 与容器通信。IPC 消息携带：新任务分配、补充上下文、状态查询、中断信号和终止命令。
-- `Session` 应尽可能路由到其当前绑定的 `Container`。容器槽位管理必须追踪哪个会话绑定到哪个容器。
-- 容器在被回收之前必须回写所有持久状态。
+**来源映射**：从 `backends/host.py` 迁移；参考 `refs/` 了解工具模式。
 
 **完成标准**：
 
-- 使用 V2 schema 类型可以将任务委派给容器 backend。
-- 容器内 LLM 完成任务并通过 IPC 产出 `ExecutionResult`。
-- 会话绑定得到保持：对同一会话的后续请求路由到同一容器。
-- 达到活跃容器上限时，新任务排队而不是产生额外容器。
-- 密钥不在容器范围外写入磁盘。
-- 回收前容器回写完成。
+- 示例执行请求运行内置工具（如 `echo`），输出出现在归档中。
+- 编排器 stub 仍通过 `ExecutionBackend` 协议调用 host backend；链路保持可运行。
+
+**验证命令**：
+
+```bash
+python -m secnano_v2 delegate --role demo --task "run echo hello"
+cat runtime/tasks/*.json          # 归档记录内含 ExecutionResult
+```
 
 ---
 
-## 11. Phase 7：Provider 与认知（中书省大脑）
+## 8. Phase 4：认知（中书省）
 
-**目标**：构建 AI Provider 抽象，并在稳定的内部接口后面重新设计中书省认知子层。
+**目标**：用真实 LLM 驱动的编排层替换认知 stub，置于 `CognitionRequest` / `CognitionResult` 契约之后。
 
 **交付物**：
 
 - `src/v2/providers/base.py` — `AIProvider` 协议
-- `src/v2/providers/registry.py` — Provider 注册表与选择
-- `src/v2/providers/factory.py` — 从配置创建 Provider 的工厂
-- `src/v2/zhongshu/cognition/runtime.py` — 认知子层入口点（`CognitionRequest` → `CognitionResult`）
-- `src/v2/zhongshu/cognition/prompting.py` — 从角色资产和翰林院上下文组装提示词
-- `src/v2/zhongshu/cognition/loop.py` — 带工具调用反馈的多轮 LLM 调用循环
-- `src/v2/zhongshu/cognition/nanobot_shim.py` — **可选**垫片，将 `nanobot.agent.loop.AgentLoop` 包裹在接口之后（如果仍在使用 `nanobot`）
-- 单元测试：从 `RoleSpec` + 检索上下文组装提示词；Provider 抽象返回标准响应。
+- `src/v2/providers/openai.py` — OpenAI Provider（主要样例）
+- `src/v2/zhongshu/cognition/runtime.py` — 认知入口点（`CognitionRequest` → `CognitionResult`）
+- `src/v2/zhongshu/cognition/prompting.py` — 从 `RoleSpec` + 翰林院 mock 上下文组装提示词
+- `src/v2/zhongshu/orchestrator.py` — 真实编排器：`InboundEvent` → 认知 → `ExecutionRequest` → backend → `Reply`
+- `src/v2/zhongshu/cognition/nanobot_shim.py` — **可选**垫片，如仍使用 `nanobot` 则仅在此处隔离
+
+测试：
+
+- 从 `RoleSpec` 加上空翰林院上下文组装提示词，产出非空提示字符串。
+- Provider 协议：mock provider 返回 `CognitionResult`；仅通过配置切换到真实 provider。
+- 集成：`InboundEvent` → 编排器 → 认知 → `ExecutionRequest` → host backend → `Reply`。
 
 **设计规则**：
 
-- `nanobot`（如使用）只从 `src/v2/zhongshu/cognition/nanobot_shim.py` 调用。其他文件不导入 `nanobot`。
-- 认知子层接口（`CognitionRequest` / `CognitionResult`）必须在 `nanobot_shim.py` 被原生实现替代之前保持稳定。
+- `nanobot`（如使用）只从 `nanobot_shim.py` 调用，其他文件不导入。
+- 翰林院 mock 继续返回空列表；提示词仅从角色资产组装上下文。
 
 **完成标准**：
 
-- 带有角色和任务的 `CognitionRequest` 产出带有自然语言结论的 `CognitionResult`。
-- 切换 Provider（例如从 OpenAI 到 Anthropic）只需更改配置，无需修改代码。
-- 所有工具调用循环在认知子层内完成；没有工具结果以原始字符串泄露给编排器。
+- `python -m secnano_v2 delegate --role demo --task "summarise this"` 调用真实 LLM 并返回连贯回复。
+- 切换 Provider（OpenAI → Anthropic）只需修改配置键，无需改代码。
+
+**验证命令**：
+
+```bash
+export SECNANO_PROVIDER=openai
+python -m secnano_v2 delegate --role demo --task "say hello in three languages"
+# 预期：打印真实 LLM 回复；归档含 CognitionResult
+```
 
 ---
 
-## 12. Phase 8：输出守卫（门下省）
+## 9. Phase 5：输出守卫 + 集成
 
-**目标**：将门下省（Menxia Sheng）输出守卫实现为回复路径中的显式校验门。
+**目标**：用真实基于策略的校验门替换门下省 stub，并验证所有真实模块的完整主链路端到端。
 
 **交付物**：
 
-- `src/v2/menxia/__init__.py`
-- `src/v2/menxia/guard.py` — 输出校验入口点（`Reply` → `ApprovedReply | Rejection`）
+- `src/v2/menxia/guard.py` — 真实输出守卫（`Reply` → `ApprovedReply | Rejection`）
 - `src/v2/menxia/policies/base.py` — 策略规则协议
-- `src/v2/menxia/policies/format.py` — 格式校验规则
+- `src/v2/menxia/policies/format.py` — 格式校验（非空、有效 UTF-8、长度限制）
 - `src/v2/menxia/policies/safety.py` — 内容安全规则（初始宽松；按角色收紧）
-- 单元测试：已审批的回复通过；拒绝返回结构化错误。
+- 端到端集成测试：CLI → `InboundEvent` → 编排器 → 认知 → 执行 → 守卫 → 回复。
+
+测试：
+
+- 已审批的回复原样通过。
+- 违反格式策略的回复产出结构化 `Rejection`，而非原始模型字符串。
+- `Rejection` 反馈给编排器（不直接打印给用户）。
 
 **设计规则**：
 
-- 守卫不生成内容，只检查并审批或拒绝。
+- 守卫不生成内容——只检查并审批或拒绝。
 - 策略规则是声明式的，不调用 LLM。
-- 拒绝反馈给中书省编排器，而不是直接给用户。
 
 **完成标准**：
 
-- V2 编排器中的每条回复路径在到达 I/O 输出层之前都经过守卫。
-- 策略违规产出结构化拒绝，而不是原始模型输出。
+- 每条回复路径在到达 CLI 输出之前都经过守卫。
+- 故意构造的格式违规回复（如通过测试注入）被捕获并产出 `Rejection`。
+- 完整端到端集成测试通过。
+
+**验证命令**：
+
+```bash
+python -m secnano_v2 delegate --role demo --task "hello"
+# 预期：打印已审批回复；归档含 ApprovedReply 记录
+
+python -m secnano_v2 self-test --chain
+# 预期：运行全链路冒烟测试；所有步骤通过
+```
 
 ---
 
-## 13. Phase 9：最终迁移与整合
+## 10. 迁移阶段汇总
 
-**目标**：完成端到端 V2 流水线，废弃主兼容垫片，并验证完整架构。
-
-**交付物**：
-
-- `src/v2/zhongshu/orchestrator/` — 完整编排子层（会话、规划器、调度器、审查器）
-- 端到端集成测试：CLI 输入 → InboundEvent → 编排器 → 认知 → 执行 → 输出守卫 → 回复。
-- 如果仍在使用 `nanobot`，则废弃 `src/v2/zhongshu/cognition/nanobot_shim.py`；否则以原生循环替代。
-- 在 `docs/plan/roadmap.zh-CN.md` 或后续 V2 状态文档中更新完成状态。
-- 决策记录：保留 `nanobot` 作为库垫片，还是以原生认知循环替代。
-
-**完成标准**：
-
-- 完整的委派任务（角色选择 → 认知 → 执行 → 归档 → 回复）只使用 V2 模块完成。
-- 除 `src/v2/zhongshu/cognition/nanobot_shim.py` 外，没有其他模块导入 `nanobot` 内部实现。
-- 单一主控约束通过集成测试验证。
-- 所有原 `main` 里程碑命令都有 V2 等价命令。
+| 阶段 | 关键模块 | 来源 | 主链路状态 |
+|------|---------|------|----------|
+| 0 | 文档 | — | 不适用 |
+| 1 | Schema + 全部 stub | 新建 | **可运行（全 stub）** |
+| 2 | 通政司 + 归档 | `cli.py`、`archive.py` → 重新设计 | 可运行（真实入口 + 归档） |
+| 3 | 六部 Host Backend | `backends/host.py` → 迁移 | 可运行（真实执行） |
+| 4 | 中书省认知 + Provider | `runtime_bridge.py` → 重新设计 | 可运行（真实 LLM） |
+| 5 | 门下省守卫 + 集成 | 新建 | **全真实** |
 
 ---
 
-## 14. 迁移阶段汇总
-
-| 阶段 | 引入的关键模块 | 关键来源 | 风险 |
-|------|--------------|---------|------|
-| 0 | 文档 | — | 低 |
-| 1 | 数据 Schema（奏折） | `models.py` → 重新设计 | 低 |
-| 2 | 通政司（入口） | `cli.py` → 重新设计 | 低 |
-| 3 | 归档 + 角色 | `archive.py`、`roles.py` → 迁移 | 低 |
-| 4 | 翰林院 / 史馆（RAG + 记忆） | 新层 | 中 |
-| 5 | 六部 Host Backend + 工具 | `backends/host.py` → 迁移 | 中 |
-| 6 | 六部容器 Backend | `refs/pyclaw` → 重新实现 | 高 |
-| 7 | AI Provider + 中书省认知 | `runtime_bridge.py` → 重新设计 | 高 |
-| 8 | 门下省（输出守卫） | 新层 | 中 |
-| 9 | 编排 + 整合 | `delegate_command.py` → 重新设计 | 高 |
-
----
-
-## 15. V2 实现建议目录结构
-
-实现开始时，V2 代码应放置在 `src/v2/` 下，以与清理后的 `src/`、`tests/`、`scripts/` 顶层边界保持一致：
+## 11. V2 实现建议目录结构
 
 ```
 src/
-  v2/                           ← 新 V2 实现
-    schemas/                    ← Phase 1：数据 Schema（奏折）
+  v2/
+    schemas/                    ← Phase 1：数据契约（不可变）
       inbound.py
       task.py
       reply.py
       archive.py
-      container.py
       roles.py
-      capabilities.py
       cognition.py
-    tongzhengsi/                ← Phase 2：入口
+    tongzhengsi/                ← Phase 2：入口（CLI → InboundEvent）
       cli_channel.py
       validator.py
       errors.py
-    archive/                    ← Phase 3：归档与状态
-      tasks.py
-      sessions.py
-      queries.py
-    roles/                      ← Phase 3：角色与资产
+    archive/                    ← Phase 2：持久化
+      writer.py
+      reader.py
+    roles/                      ← Phase 2：角色资产加载
       loader.py
-      registry.py
-      memory.py
-    hanlin/                     ← Phase 4：RAG + 记忆检索
-      retriever.py
-      indexer.py
-      memory_gate.py
-    liubu/                      ← Phases 5 & 6：执行 + 工具
+    liubu/                      ← Phase 3：执行
       backends/
         base.py
         host.py
-        container.py
-      container/
-        workspace.py
-        mounts.py
-        secrets.py
-        lifecycle.py
-        ipc.py
-        slots.py                ← 活跃容器槽位管理 + 排队
-        writeback.py            ← 回收前状态回写到归档
       tools/
         registry.py
         specs.py
-      artifacts.py
-    providers/                  ← Phase 7：AI Provider
+    providers/                  ← Phase 4：AI Provider 抽象
       base.py
-      registry.py
-      factory.py
-    zhongshu/                   ← Phases 7 & 9：主控 + 大脑
+      openai.py
+    zhongshu/                   ← Phase 4：编排器 + 认知
+      orchestrator.py
       cognition/
         runtime.py
         prompting.py
-        loop.py
-        nanobot_shim.py         ← 可选，隔离 nanobot 依赖
-      orchestrator/
-        sessions.py
-        planner.py
-        dispatcher.py
-        reviewer.py
-    menxia/                     ← Phase 8：输出守卫
+        nanobot_shim.py         ← 可选；隔离 nanobot 依赖
+    hanlin/                     ← 全程 mock
+      retriever.py              ← 核心阶段永久返回 []
+    menxia/                     ← Phase 5：输出守卫
       guard.py
       policies/
         base.py
         format.py
         safety.py
-    config/                     ← 支撑：配置管理
-      schema.py
-      loader.py
-      paths.py
-    skills/                     ← 支撑：技能注册表
-      loader.py
-      registry.py
-      parser.py
-    adapters/                   ← 支撑：能力适配器
-      base.py
-      registry.py
-      capability_specs.py
-tests/                          ← V2 测试套件
-scripts/                        ← V2 项目脚本
-docs/                           ← V2 设计文档（本分支）
+    __main__.py                 ← Phase 1：连通主链路的入口
+tests/
+scripts/
+docs/
 refs/                           ← 仅保留轻量级参考索引
 ```
+
+> **容器 backend**（`liubu/backends/container.py` 及 `liubu/container/`）：延后至 Phase 6+。仅在 host backend 主链路完全稳定且确认需要容器执行时再添加。
