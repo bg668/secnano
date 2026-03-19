@@ -1,5 +1,27 @@
 # 历史记录
 
+## 2026-03-19
+
+### Subagent Runtime：Milestone A 开发启动（进行中）
+
+已完成功能：
+
+1. 新增 `secnano` 包基础入口，支持 `python3 -m secnano` 与 `--version`。
+2. 新增运行时路径模型 `ProjectPaths`，统一 `runtime/db/secnano.sqlite3` 的绝对路径发现与目录初始化。
+3. 新增 SQLite 任务存储最小实现（`tasks` 表、WAL、`busy_timeout`）。
+4. 新增 `tasks submit`：可创建 `pending` 任务并返回任务详情（支持 `--json`）。
+5. 新增 `tasks show` / `tasks list`：支持按 `task_id` 查询与按状态列表查询（支持 `--json`）。
+6. 新增 `tasks poll`：支持按超时轮询任务状态，未到终态时超时返回 `124`。
+7. 新增最小测试集 `tests/test_tasks_cli.py`，覆盖 submit/show、list 状态过滤、poll 超时返回码。
+
+验收命令（已通过）：
+
+1. `python3 -m unittest tests.test_tasks_cli -q`
+2. `python3 -m unittest discover -s tests -q`
+3. `python3 -m secnano --help`
+4. `python3 -m secnano tasks submit --role general_office --task "手工验证 submit" --json`
+5. `python3 -m secnano tasks list --status pending --limit 5 --json`
+
 ## 2026-03-17
 
 ### Milestone 0：工程骨架（已完成）
