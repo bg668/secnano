@@ -1,5 +1,29 @@
 # 历史记录
 
+## 2026-03-20
+
+### Subagent Runtime：Milestone C — P0 执行层（已完成）
+
+已完成功能：
+
+1. `secnano/runtime_db.py` 补全执行层函数：`claim_task`（原子 UPDATE）、`mark_running`、`mark_done`、`mark_failed`、`append_run_log`、`list_pending_tasks`、`update_task_status`；新增 `task_run_logs` 建表 SQL 与唯一索引；新增 `TASK_ACTIVE_STATUSES`。
+2. 新增 `secnano/worker_pool.py`：`WorkerPool` 常驻管理器，支持 `start/stop/status/enqueue`，后台调度线程每 5s 扫描 pending tasks 并 `try_spawn`，子进程超时后 `proc.kill()` 并 `mark_failed`。
+3. 新增 `secnano/agent_loop.py`：`run_agent_loop()` 标准 agent loop 骨架，支持工具调用与多轮对话。
+4. 新增 `secnano/llm_client.py`：轻量 Anthropic LLM 客户端，通过 `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_BASE_URL`/`SECNANO_MODEL` 环境变量配置。
+5. 新增 `secnano/tools/__init__.py` 与 `secnano/tools/dispatch.py`：`TOOL_HANDLERS` dispatch map（`read_file/write_file/edit_file/run_command`）、`safe_path` 沙箱、`TOOL_SCHEMAS` anthropic 格式工具定义。
+6. 新增 `secnano/subagent/__init__.py` 与 `secnano/subagent/subagent_entry.py`：子进程入口，解码 base64 任务 JSON → 构建 system prompt → 调用 `run_agent_loop` → `mark_done/mark_failed`。
+7. 新增 `secnano/_subagent.py`：`python3 -m secnano._subagent <base64_task_json>` 入口。
+8. `secnano/__main__.py` 补充 `workers start/status/stop` CLI 子命令；`workers start` 以前台常驻方式运行 WorkerPool，每秒处理 IPC 文件并扫描 pending tasks。
+9. `pyproject.toml` 追加 `anthropic>=0.40.0` 依赖。
+10. 新增测试 `tests/test_worker_pool.py`，覆盖 `claim_task` 原子性、`mark_done` 状态、`mark_failed` 状态、`list_pending_tasks` 过滤、`append_run_log`、`update_task_status`。
+11. 新增开发计划文档 `docs/plan.zh-CN.md`（里程碑总览 + P0-P3 待办清单 + 验收标准）。
+
+验收命令（已通过）：
+
+1. `python3 -m unittest discover -s tests -q`
+2. `python3 -m secnano workers --help`
+3. `python3 -m secnano workers status`
+
 ## 2026-03-19
 
 ### Subagent Runtime：Milestone A 开发启动（进行中）

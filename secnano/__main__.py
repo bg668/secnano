@@ -11,13 +11,15 @@ from . import __version__
 from .ipc_watcher import watch_once
 from .ipc_writer import build_task_request, write_task_file
 from .paths import ProjectPaths
-from .runtime_db import TASK_TERMINAL_STATUSES, create_task, get_task, init_db, list_tasks
+from .runtime_db import TASK_TERMINAL_STATUSES, create_task, get_task, init_db, list_tasks, list_pending_tasks
 
 if TYPE_CHECKING:
     from .runtime_db import TaskRecord
 
+IPC_POLL_INTERVAL = 1.0  # seconds
 
-def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, argparse.ArgumentParser]:
+
+def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, argparse.ArgumentParser, argparse.ArgumentParser]:
     parser = argparse.ArgumentParser(prog="secnano")
     parser.add_argument("--version", action="store_true", help="show version")
     subparsers = parser.add_subparsers(dest="command")
@@ -63,7 +65,21 @@ def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, ar
     watch_parser.add_argument("--namespace", default="main")
     watch_parser.add_argument("--json", action="store_true")
 
-    return parser, tasks_parser, ipc_parser
+    # workers subcommand
+    workers_parser = subparsers.add_parser("workers", help="worker pool management")
+    workers_subparsers = workers_parser.add_subparsers(dest="workers_command")
+
+    start_parser = workers_subparsers.add_parser("start", help="start worker pool (foreground)")
+    start_parser.add_argument("--max-workers", type=int, default=4)
+    start_parser.add_argument("--task-timeout", type=int, default=300)
+    start_parser.add_argument("--namespace", default="main")
+
+    status_parser = workers_subparsers.add_parser("status", help="show worker pool status")
+    status_parser.add_argument("--json", action="store_true")
+
+    workers_subparsers.add_parser("stop", help="send stop signal (noop in this implementation)")
+
+    return parser, tasks_parser, ipc_parser, workers_parser
 
 
 def _print_task(task: "TaskRecord", json_output: bool) -> None:
@@ -84,17 +100,16 @@ def _print_task_list(tasks: list["TaskRecord"], json_output: bool) -> None:
 
 
 def run(argv: list[str] | None = None) -> int:
-    parser, tasks_parser, ipc_parser = build_parser()
+    parser, tasks_parser, ipc_parser, workers_parser = build_parser()
     args = parser.parse_args(argv)
 
     if args.version:
         print(__version__)
         return 0
 
-    if args.command != "tasks":
-        if args.command != "ipc":
-            parser.print_help()
-            return 0
+    if args.command not in ("tasks", "ipc", "workers"):
+        parser.print_help()
+        return 0
 
     paths = ProjectPaths.discover()
     init_db(paths)
@@ -178,6 +193,62 @@ def run(argv: list[str] | None = None) -> int:
             return 0
 
         ipc_parser.print_help()
+        return 0
+
+    if args.command == "workers":
+        if args.workers_command == "start":
+            from .worker_pool import WorkerPool
+
+            pool = WorkerPool(
+                paths,
+                max_workers=args.max_workers,
+                task_timeout=args.task_timeout,
+            )
+            pool.start()
+            print(
+                f"WorkerPool started: max_workers={args.max_workers}, "
+                f"task_timeout={args.task_timeout}s, namespace={args.namespace}",
+                file=sys.stderr,
+            )
+            try:
+                while True:
+                    # Process IPC files
+                    try:
+                        watch_once(paths, namespace=args.namespace)
+                    except Exception:
+                        pass
+                    # Scan pending tasks into pool
+                    try:
+                        pending = list_pending_tasks(paths, limit=args.max_workers * 2)
+                        for task in pending:
+                            pool.enqueue(task.task_id, task.payload)
+                    except Exception:
+                        pass
+                    time.sleep(IPC_POLL_INTERVAL)
+            except KeyboardInterrupt:
+                print("\nShutting down WorkerPool...", file=sys.stderr)
+                pool.stop()
+            return 0
+
+        if args.workers_command == "status":
+            # Status is only meaningful when pool is running in-process;
+            # here we show DB-level info instead
+            pending = list_pending_tasks(paths, limit=100)
+            status = {
+                "pending_count": len(pending),
+                "pending_task_ids": [t.task_id for t in pending],
+            }
+            if args.json:
+                print(json.dumps(status, ensure_ascii=False))
+            else:
+                print(f"pending={status['pending_count']}")
+            return 0
+
+        if args.workers_command == "stop":
+            print("Stop signal noted. If workers start is running, press Ctrl+C to stop it.", file=sys.stderr)
+            return 0
+
+        workers_parser.print_help()
         return 0
 
     parser.print_help()
