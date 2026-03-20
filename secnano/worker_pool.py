@@ -46,6 +46,7 @@ class WorkerPool:
         self._lock = threading.Lock()
         self._waiting: list[tuple[str, dict]] = []  # (task_id, payload)
         self._active: dict[str, subprocess.Popen] = {}  # task_id -> proc
+        self._start_times: dict[str, float] = {}  # task_id -> monotonic start time
         self._stop_event = threading.Event()
         self._scheduler_thread: threading.Thread | None = None
 
@@ -109,12 +110,12 @@ class WorkerPool:
         """Poll running processes and handle any that have exited."""
         with self._lock:
             finished = [
-                (task_id, proc)
+                (task_id, proc, self._start_times.get(task_id))
                 for task_id, proc in self._active.items()
                 if proc.poll() is not None
             ]
-        for task_id, proc in finished:
-            self._on_worker_exit(task_id, proc, start_time=None)
+        for task_id, proc, start_time in finished:
+            self._on_worker_exit(task_id, proc, start_time=start_time)
 
     def _scan_pending_db(self) -> None:
         """Pull pending tasks from the DB and enqueue them."""
@@ -185,9 +186,10 @@ class WorkerPool:
 
         with self._lock:
             self._active[task_id] = proc
+            self._start_times[task_id] = time.monotonic()
 
         # Start a watcher thread so we get timeout handling
-        start_time = time.monotonic()
+        start_time = self._start_times[task_id]
         watcher = threading.Thread(
             target=self._wait_for_worker,
             args=(task_id, proc, start_time),
@@ -213,8 +215,6 @@ class WorkerPool:
             except Exception:
                 logger.exception("Failed to mark_failed for timed-out task %s", task_id)
         finally:
-            with self._lock:
-                self._active.pop(task_id, None)
             self._on_worker_exit(task_id, proc, start_time)
 
     def _on_worker_exit(self, task_id: str, proc: subprocess.Popen, start_time: float | None) -> None:
@@ -262,3 +262,4 @@ class WorkerPool:
 
         with self._lock:
             self._active.pop(task_id, None)
+            self._start_times.pop(task_id, None)
