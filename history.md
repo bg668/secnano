@@ -22,6 +22,30 @@
 4. `python3 -m secnano tasks submit --role general_office --task "手工验证 submit" --json`
 5. `python3 -m secnano tasks list --status pending --limit 5 --json`
 
+## 2026-03-20
+
+### Subagent Runtime：Milestone B（IPC 对齐，已完成）
+
+已完成功能：
+
+1. 新增 IPC 路径支持：`runtime/ipc/<namespace>/{tasks,results}` 与 `runtime/ipc/errors`。
+2. 新增 `ipc_writer`：支持构造 v1 task 请求并采用 `*.tmp -> rename` 原子写入任务文件。
+3. 新增 `ipc_watcher`：支持扫描 `tasks/*.json` 并将合法请求入库到 SQLite。
+4. 新增 namespace 授权模块（当前最小策略：仅允许 `main`）。
+5. 新增错误归档：坏 JSON、无权限 namespace、无效 payload 均写入 `runtime/ipc/errors/*.json`。
+6. 新增 `ipc write-task` CLI：支持 `--file /abs/path/*.json` 或命令行参数构造任务。
+7. 新增 `ipc watch` CLI：支持按 namespace 处理 IPC 任务文件并输出处理结果。
+8. 对 watcher 加入处理后清理策略：成功与失败均删除已处理任务文件，避免重复扫描。
+9. 新增测试 `tests/test_ipc_cli.py`，覆盖“写入并触发执行”与“越权拒绝并归档错误”。
+
+验收命令（已通过）：
+
+1. `python3 -m unittest tests.test_ipc_cli -q`
+2. `python3 -m unittest discover -s tests -q`
+3. `python3 -m secnano ipc write-task --role general_office --task "B 手工验证" --namespace main --json`
+4. `python3 -m secnano ipc watch --namespace main --json`
+5. `python3 -m secnano tasks list --status pending --limit 5 --json`
+
 ## 2026-03-17
 
 ### Milestone 0：工程骨架（已完成）
