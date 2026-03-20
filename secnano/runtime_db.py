@@ -11,6 +11,7 @@ from typing import Any
 from .paths import ProjectPaths
 
 TASK_TERMINAL_STATUSES = {"done", "failed", "cancelled"}
+TASK_ACTIVE_STATUSES = {"pending", "queued", "running"}
 
 
 def utc_now_iso() -> str:
@@ -95,6 +96,22 @@ def init_db(paths: ProjectPaths) -> None:
 
             CREATE INDEX IF NOT EXISTS idx_tasks_next_run
             ON tasks(next_run_at);
+
+            CREATE TABLE IF NOT EXISTS task_run_logs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              task_id TEXT NOT NULL,
+              attempt_no INTEGER NOT NULL,
+              worker_id TEXT,
+              status TEXT NOT NULL,
+              duration_ms INTEGER,
+              error_text TEXT,
+              result_json TEXT,
+              created_at TEXT NOT NULL,
+              FOREIGN KEY(task_id) REFERENCES tasks(task_id)
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_task_run_logs_unique_attempt
+            ON task_run_logs(task_id, attempt_no);
             """
         )
         conn.commit()
@@ -187,3 +204,115 @@ def _row_to_task(row: sqlite3.Row) -> TaskRecord:
         finished_at=row["finished_at"],
         next_run_at=row["next_run_at"],
     )
+
+
+def claim_task(paths: ProjectPaths, task_id: str, worker_id: str) -> bool:
+    """Atomically claim a pending/queued task. Returns True if successful."""
+    now = utc_now_iso()
+    with _connect(paths.db_path) as conn:
+        cursor = conn.execute(
+            """
+            UPDATE tasks
+            SET status = 'claimed', worker_id = ?, updated_at = ?
+            WHERE task_id = ? AND status IN ('pending', 'queued')
+            """,
+            (worker_id, now, task_id),
+        )
+        conn.commit()
+        return cursor.rowcount == 1
+
+
+def mark_running(paths: ProjectPaths, task_id: str, worker_id: str) -> None:
+    """Mark a task as running."""
+    now = utc_now_iso()
+    with _connect(paths.db_path) as conn:
+        conn.execute(
+            """
+            UPDATE tasks
+            SET status = 'running', worker_id = ?, started_at = ?, updated_at = ?
+            WHERE task_id = ?
+            """,
+            (worker_id, now, now, task_id),
+        )
+        conn.commit()
+
+
+def mark_done(paths: ProjectPaths, task_id: str, result: dict) -> None:
+    """Mark a task as done with result."""
+    now = utc_now_iso()
+    with _connect(paths.db_path) as conn:
+        conn.execute(
+            """
+            UPDATE tasks
+            SET status = 'done', result_json = ?, finished_at = ?, updated_at = ?
+            WHERE task_id = ?
+            """,
+            (json.dumps(result, ensure_ascii=False), now, now, task_id),
+        )
+        conn.commit()
+
+
+def mark_failed(paths: ProjectPaths, task_id: str, error: str) -> None:
+    """Mark a task as failed with error text."""
+    now = utc_now_iso()
+    with _connect(paths.db_path) as conn:
+        conn.execute(
+            """
+            UPDATE tasks
+            SET status = 'failed', error_text = ?, finished_at = ?, updated_at = ?
+            WHERE task_id = ?
+            """,
+            (error, now, now, task_id),
+        )
+        conn.commit()
+
+
+def append_run_log(
+    paths: ProjectPaths,
+    task_id: str,
+    attempt_no: int,
+    worker_id: str | None,
+    status: str,
+    duration_ms: int | None,
+    error_text: str | None,
+    result: dict | None,
+) -> None:
+    """Append an entry to task_run_logs."""
+    now = utc_now_iso()
+    result_json = json.dumps(result, ensure_ascii=False) if result is not None else None
+    with _connect(paths.db_path) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO task_run_logs
+              (task_id, attempt_no, worker_id, status, duration_ms, error_text, result_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (task_id, attempt_no, worker_id, status, duration_ms, error_text, result_json, now),
+        )
+        conn.commit()
+
+
+def list_pending_tasks(paths: ProjectPaths, limit: int = 10) -> list[TaskRecord]:
+    """Return pending/queued tasks ordered by creation time."""
+    with _connect(paths.db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM tasks
+            WHERE status IN ('pending', 'queued')
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [_row_to_task(row) for row in rows]
+
+
+def update_task_status(paths: ProjectPaths, task_id: str, status: str) -> None:
+    """Generic status update (e.g. for queued or other intermediate states)."""
+    now = utc_now_iso()
+    with _connect(paths.db_path) as conn:
+        conn.execute(
+            "UPDATE tasks SET status = ?, updated_at = ? WHERE task_id = ?",
+            (status, now, task_id),
+        )
+        conn.commit()
