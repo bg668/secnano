@@ -108,13 +108,31 @@ def create_task(
     namespace: str = "main",
     max_retries: int = 0,
 ) -> TaskRecord:
+    return create_task_with_id(
+        paths,
+        task_id=create_task_id(),
+        role=role,
+        task=task,
+        namespace=namespace,
+        max_retries=max_retries,
+    )
+
+
+def create_task_with_id(
+    paths: ProjectPaths,
+    *,
+    task_id: str,
+    role: str,
+    task: str,
+    namespace: str = "main",
+    max_retries: int = 0,
+) -> TaskRecord:
     now = utc_now_iso()
-    task_id = create_task_id()
     payload = {"task": task}
     with _connect(paths.db_path) as conn:
         conn.execute(
             """
-            INSERT INTO tasks (
+            INSERT OR IGNORE INTO tasks (
               task_id, namespace, role, status, payload_json, result_json, error_text, worker_id,
               retry_count, max_retries, created_at, updated_at, started_at, finished_at, next_run_at
             ) VALUES (?, ?, ?, 'pending', ?, NULL, NULL, NULL, 0, ?, ?, ?, NULL, NULL, NULL)

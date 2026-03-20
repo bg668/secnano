@@ -2,15 +2,22 @@ from __future__ import annotations
 
 import argparse
 import json
+import pathlib
 import sys
 import time
+from typing import TYPE_CHECKING
 
 from . import __version__
+from .ipc_watcher import watch_once
+from .ipc_writer import build_task_request, write_task_file
 from .paths import ProjectPaths
 from .runtime_db import TASK_TERMINAL_STATUSES, create_task, get_task, init_db, list_tasks
 
+if TYPE_CHECKING:
+    from .runtime_db import TaskRecord
 
-def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser]:
+
+def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, argparse.ArgumentParser]:
     parser = argparse.ArgumentParser(prog="secnano")
     parser.add_argument("--version", action="store_true", help="show version")
     subparsers = parser.add_subparsers(dest="command")
@@ -40,10 +47,26 @@ def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser]:
     poll_parser.add_argument("--interval", type=float, default=1.0)
     poll_parser.add_argument("--json", action="store_true")
 
-    return parser, tasks_parser
+    ipc_parser = subparsers.add_parser("ipc", help="ipc tools")
+    ipc_subparsers = ipc_parser.add_subparsers(dest="ipc_command")
+
+    write_task_parser = ipc_subparsers.add_parser("write-task", help="write ipc task json")
+    write_task_parser.add_argument("--file")
+    write_task_parser.add_argument("--role")
+    write_task_parser.add_argument("--task")
+    write_task_parser.add_argument("--namespace", default="main")
+    write_task_parser.add_argument("--timeout-sec", type=int, default=120)
+    write_task_parser.add_argument("--max-retries", type=int, default=0)
+    write_task_parser.add_argument("--json", action="store_true")
+
+    watch_parser = ipc_subparsers.add_parser("watch", help="process ipc task files once")
+    watch_parser.add_argument("--namespace", default="main")
+    watch_parser.add_argument("--json", action="store_true")
+
+    return parser, tasks_parser, ipc_parser
 
 
-def _print_task(task, json_output: bool) -> None:
+def _print_task(task: "TaskRecord", json_output: bool) -> None:
     payload = task.to_json_dict()
     if json_output:
         print(json.dumps(payload, ensure_ascii=False))
@@ -51,7 +74,7 @@ def _print_task(task, json_output: bool) -> None:
     print(f"{payload['task_id']} {payload['status']} role={payload['role']}")
 
 
-def _print_task_list(tasks, json_output: bool) -> None:
+def _print_task_list(tasks: list["TaskRecord"], json_output: bool) -> None:
     payload = [task.to_json_dict() for task in tasks]
     if json_output:
         print(json.dumps(payload, ensure_ascii=False))
@@ -61,7 +84,7 @@ def _print_task_list(tasks, json_output: bool) -> None:
 
 
 def run(argv: list[str] | None = None) -> int:
-    parser, tasks_parser = build_parser()
+    parser, tasks_parser, ipc_parser = build_parser()
     args = parser.parse_args(argv)
 
     if args.version:
@@ -69,52 +92,95 @@ def run(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command != "tasks":
-        parser.print_help()
-        return 0
+        if args.command != "ipc":
+            parser.print_help()
+            return 0
 
     paths = ProjectPaths.discover()
     init_db(paths)
 
-    if args.tasks_command == "submit":
-        task = create_task(
-            paths,
-            role=args.role,
-            task=args.task,
-            namespace=args.namespace,
-            max_retries=args.max_retries,
-        )
-        _print_task(task, args.json)
-        return 0
+    if args.command == "tasks":
+        if args.tasks_command == "submit":
+            task = create_task(
+                paths,
+                role=args.role,
+                task=args.task,
+                namespace=args.namespace,
+                max_retries=args.max_retries,
+            )
+            _print_task(task, args.json)
+            return 0
 
-    if args.tasks_command == "show":
-        task = get_task(paths, args.task_id)
-        if task is None:
-            print(f"task not found: {args.task_id}", file=sys.stderr)
-            return 1
-        _print_task(task, args.json)
-        return 0
-
-    if args.tasks_command == "list":
-        tasks = list_tasks(paths, status=args.status, limit=args.limit)
-        _print_task_list(tasks, args.json)
-        return 0
-
-    if args.tasks_command == "poll":
-        deadline = time.monotonic() + args.timeout
-        while True:
+        if args.tasks_command == "show":
             task = get_task(paths, args.task_id)
             if task is None:
                 print(f"task not found: {args.task_id}", file=sys.stderr)
                 return 1
-            if task.status in TASK_TERMINAL_STATUSES:
-                _print_task(task, args.json)
-                return 0
-            if time.monotonic() >= deadline:
-                _print_task(task, args.json)
-                return 124
-            time.sleep(args.interval)
+            _print_task(task, args.json)
+            return 0
 
-    tasks_parser.print_help()
+        if args.tasks_command == "list":
+            tasks = list_tasks(paths, status=args.status, limit=args.limit)
+            _print_task_list(tasks, args.json)
+            return 0
+
+        if args.tasks_command == "poll":
+            deadline = time.monotonic() + args.timeout
+            while True:
+                task = get_task(paths, args.task_id)
+                if task is None:
+                    print(f"task not found: {args.task_id}", file=sys.stderr)
+                    return 1
+                if task.status in TASK_TERMINAL_STATUSES:
+                    _print_task(task, args.json)
+                    return 0
+                if time.monotonic() >= deadline:
+                    _print_task(task, args.json)
+                    return 124
+                time.sleep(args.interval)
+
+        tasks_parser.print_help()
+        return 0
+
+    if args.command == "ipc":
+        if args.ipc_command == "write-task":
+            if args.file:
+                file_path = pathlib.Path(args.file)
+                if not file_path.is_absolute():
+                    print("--file must be absolute path", file=sys.stderr)
+                    return 2
+                payload = json.loads(file_path.read_text(encoding="utf-8"))
+            else:
+                if not args.role or not args.task:
+                    print("ipc write-task requires --file or (--role and --task)", file=sys.stderr)
+                    return 2
+                payload = build_task_request(
+                    role=args.role,
+                    task=args.task,
+                    namespace=args.namespace,
+                    timeout_sec=args.timeout_sec,
+                    max_retries=args.max_retries,
+                )
+            path = write_task_file(paths, payload)
+            response = {"file": str(path), "task_id": payload.get("task_id"), "namespace": payload.get("namespace")}
+            if args.json:
+                print(json.dumps(response, ensure_ascii=False))
+            else:
+                print(f"{response['file']} task_id={response['task_id']}")
+            return 0
+
+        if args.ipc_command == "watch":
+            results = watch_once(paths, namespace=args.namespace)
+            if args.json:
+                print(json.dumps(results, ensure_ascii=False))
+            else:
+                print(f"processed={sum(1 for r in results if r.get('processed'))} total={len(results)}")
+            return 0
+
+        ipc_parser.print_help()
+        return 0
+
+    parser.print_help()
     return 0
 
 
