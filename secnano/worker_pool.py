@@ -6,10 +6,11 @@ Usage:
     pool = WorkerPool(paths, max_workers=4, task_timeout=300)
     pool.start()     # starts background scheduler thread
     pool.stop()      # graceful shutdown
-    pool.status()    # returns {active, waiting, max_workers, running_task_ids}
+    pool.status()    # returns {active, waiting, max_workers, running_task_ids, running_pids}
     pool.enqueue(task_id, payload)  # add a task to waiting queue
 """
 
+import asyncio
 import base64
 import json
 import logging
@@ -23,8 +24,10 @@ from .paths import ProjectPaths
 from .runtime_db import (
     append_run_log,
     claim_task,
+    get_task,
     list_pending_tasks,
     mark_failed,
+    mark_timeout,
 )
 
 logger = logging.getLogger(__name__)
@@ -75,12 +78,14 @@ class WorkerPool:
     def status(self) -> dict:
         with self._lock:
             running_task_ids = list(self._active.keys())
+            running_pids = {task_id: proc.pid for task_id, proc in self._active.items()}
             waiting = len(self._waiting)
         return {
             "active": len(running_task_ids),
             "waiting": waiting,
             "max_workers": self.max_workers,
             "running_task_ids": running_task_ids,
+            "running_pids": running_pids,
         }
 
     def enqueue(self, task_id: str, payload: dict) -> None:
@@ -120,7 +125,7 @@ class WorkerPool:
     def _scan_pending_db(self) -> None:
         """Pull pending tasks from the DB and enqueue them."""
         try:
-            tasks = list_pending_tasks(self.paths, limit=self.max_workers * 2)
+            tasks = asyncio.run(list_pending_tasks(self.paths, limit=self.max_workers * 2))
         except Exception:
             logger.exception("Failed to scan pending tasks from DB")
             return
@@ -147,7 +152,7 @@ class WorkerPool:
     def _try_spawn_by_id(self, task_id: str, payload: dict) -> bool:
         """Attempt to claim and spawn a worker for the given task."""
         worker_id = f"worker-{task_id[:8]}"
-        if not claim_task(self.paths, task_id, worker_id):
+        if not asyncio.run(claim_task(self.paths, task_id, worker_id)):
             return False
         self._spawn_worker(task_id, payload, worker_id)
         return True
@@ -179,7 +184,7 @@ class WorkerPool:
         except Exception as exc:
             logger.error("Failed to spawn worker for task %s: %s", task_id, exc)
             try:
-                mark_failed(self.paths, task_id, error=f"spawn_error: {exc}")
+                asyncio.run(mark_failed(self.paths, task_id, error=f"spawn_error: {exc}"))
             except Exception:
                 pass
             return
@@ -201,32 +206,60 @@ class WorkerPool:
 
     def _wait_for_worker(self, task_id: str, proc: subprocess.Popen, start_time: float) -> None:
         """Wait for a worker process to finish (with timeout)."""
+        timed_out = False
+        stderr_output = ""
         try:
             proc.wait(timeout=self.task_timeout)
         except subprocess.TimeoutExpired:
-            logger.warning("Task %s timed out after %ds, killing", task_id, self.task_timeout)
-            proc.kill()
+            timed_out = True
+            logger.warning("Task %s timed out after %ds, terminating", task_id, self.task_timeout)
+            proc.terminate()
             try:
                 proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                # Process did not stop after SIGTERM; send SIGKILL as fallback
+                try:
+                    proc.kill()
+                    proc.wait(timeout=2)
+                except Exception:
+                    pass
             except Exception:
                 pass
+            duration_ms = int((time.monotonic() - start_time) * 1000)
+            if proc.stderr:
+                try:
+                    raw = proc.stderr.read()
+                    if raw:
+                        stderr_output = raw.decode("utf-8", errors="replace")
+                except Exception:
+                    pass
+            error_detail = {
+                "pid": proc.pid,
+                "duration_ms": duration_ms,
+                "last_output": stderr_output[:500],
+            }
             try:
-                mark_failed(self.paths, task_id, error=f"timeout after {self.task_timeout}s")
+                asyncio.run(mark_timeout(self.paths, task_id, error_detail))
             except Exception:
-                logger.exception("Failed to mark_failed for timed-out task %s", task_id)
+                logger.exception("Failed to mark_timeout for timed-out task %s", task_id)
         finally:
-            self._on_worker_exit(task_id, proc, start_time)
+            self._on_worker_exit(task_id, proc, start_time, timed_out=timed_out)
 
-    def _on_worker_exit(self, task_id: str, proc: subprocess.Popen, start_time: float | None) -> None:
+    def _on_worker_exit(
+        self,
+        task_id: str,
+        proc: subprocess.Popen,
+        start_time: float | None,
+        timed_out: bool = False,
+    ) -> None:
         """Handle worker process exit: log result."""
         returncode = proc.returncode
         duration_ms: int | None = None
         if start_time is not None:
             duration_ms = int((time.monotonic() - start_time) * 1000)
 
-        # Collect stderr for logging
         stderr_output = ""
-        if proc.stderr:
+        if proc.stderr and not timed_out:
             try:
                 raw = proc.stderr.read()
                 if raw:
@@ -234,7 +267,9 @@ class WorkerPool:
             except Exception:
                 pass
 
-        if returncode == 0:
+        if timed_out:
+            status = "timeout"
+        elif returncode == 0:
             status = "done"
             logger.info("Task %s completed successfully (duration=%sms)", task_id, duration_ms)
         else:
@@ -246,16 +281,27 @@ class WorkerPool:
                 stderr_output[:200],
             )
 
+        # Determine attempt_no from DB retry_count
+        attempt_no = 1
         try:
-            append_run_log(
-                self.paths,
-                task_id=task_id,
-                attempt_no=1,
-                worker_id=f"worker-{task_id[:8]}",
-                status=status,
-                duration_ms=duration_ms,
-                error_text=stderr_output[:1000] if returncode != 0 else None,
-                result=None,
+            task_rec = asyncio.run(get_task(self.paths, task_id))
+            if task_rec is not None:
+                attempt_no = task_rec.retry_count + 1
+        except Exception:
+            pass
+
+        try:
+            asyncio.run(
+                append_run_log(
+                    self.paths,
+                    task_id=task_id,
+                    attempt_no=attempt_no,
+                    worker_id=f"worker-{task_id[:8]}",
+                    status=status,
+                    duration_ms=duration_ms,
+                    error_text=stderr_output[:1000] if (returncode != 0 or timed_out) else None,
+                    result=None,
+                )
             )
         except Exception:
             logger.exception("Failed to append_run_log for task %s", task_id)

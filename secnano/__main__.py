@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import pathlib
 import sys
@@ -11,7 +12,19 @@ from . import __version__
 from .ipc_watcher import watch_once
 from .ipc_writer import build_task_request, write_task_file
 from .paths import ProjectPaths
-from .runtime_db import TASK_TERMINAL_STATUSES, create_task, get_task, init_db, list_tasks, list_pending_tasks
+from .runtime_db import (
+    TASK_TERMINAL_STATUSES,
+    create_task,
+    create_task_id,
+    get_run_logs,
+    get_task,
+    init_db,
+    list_tasks,
+    list_pending_tasks,
+    mark_cancelled,
+    mark_paused,
+    mark_resumed,
+)
 
 if TYPE_CHECKING:
     from .runtime_db import TaskRecord
@@ -19,7 +32,12 @@ if TYPE_CHECKING:
 IPC_POLL_INTERVAL = 1.0  # seconds
 
 
-def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, argparse.ArgumentParser, argparse.ArgumentParser]:
+def build_parser() -> tuple[
+    argparse.ArgumentParser,
+    argparse.ArgumentParser,
+    argparse.ArgumentParser,
+    argparse.ArgumentParser,
+]:
     parser = argparse.ArgumentParser(prog="secnano")
     parser.add_argument("--version", action="store_true", help="show version")
     subparsers = parser.add_subparsers(dest="command")
@@ -48,6 +66,26 @@ def build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser, ar
     poll_parser.add_argument("--timeout", type=int, default=120)
     poll_parser.add_argument("--interval", type=float, default=1.0)
     poll_parser.add_argument("--json", action="store_true")
+
+    pause_parser = tasks_subparsers.add_parser("pause", help="pause a task")
+    pause_parser.add_argument("task_id")
+    pause_parser.add_argument("--json", action="store_true")
+
+    resume_parser = tasks_subparsers.add_parser("resume", help="resume a paused task")
+    resume_parser.add_argument("task_id")
+    resume_parser.add_argument("--json", action="store_true")
+
+    cancel_parser = tasks_subparsers.add_parser("cancel", help="cancel a task")
+    cancel_parser.add_argument("task_id")
+    cancel_parser.add_argument("--json", action="store_true")
+
+    retry_parser = tasks_subparsers.add_parser("retry", help="retry a task (creates new task_id)")
+    retry_parser.add_argument("task_id")
+    retry_parser.add_argument("--json", action="store_true")
+
+    logs_parser = tasks_subparsers.add_parser("logs", help="show run logs for a task")
+    logs_parser.add_argument("task_id")
+    logs_parser.add_argument("--json", action="store_true")
 
     ipc_parser = subparsers.add_parser("ipc", help="ipc tools")
     ipc_subparsers = ipc_parser.add_subparsers(dest="ipc_command")
@@ -112,22 +150,24 @@ def run(argv: list[str] | None = None) -> int:
         return 0
 
     paths = ProjectPaths.discover()
-    init_db(paths)
+    asyncio.run(init_db(paths))
 
     if args.command == "tasks":
         if args.tasks_command == "submit":
-            task = create_task(
-                paths,
-                role=args.role,
-                task=args.task,
-                namespace=args.namespace,
-                max_retries=args.max_retries,
+            task = asyncio.run(
+                create_task(
+                    paths,
+                    role=args.role,
+                    task=args.task,
+                    namespace=args.namespace,
+                    max_retries=args.max_retries,
+                )
             )
             _print_task(task, args.json)
             return 0
 
         if args.tasks_command == "show":
-            task = get_task(paths, args.task_id)
+            task = asyncio.run(get_task(paths, args.task_id))
             if task is None:
                 print(f"task not found: {args.task_id}", file=sys.stderr)
                 return 1
@@ -135,14 +175,14 @@ def run(argv: list[str] | None = None) -> int:
             return 0
 
         if args.tasks_command == "list":
-            tasks = list_tasks(paths, status=args.status, limit=args.limit)
+            tasks = asyncio.run(list_tasks(paths, status=args.status, limit=args.limit))
             _print_task_list(tasks, args.json)
             return 0
 
         if args.tasks_command == "poll":
             deadline = time.monotonic() + args.timeout
             while True:
-                task = get_task(paths, args.task_id)
+                task = asyncio.run(get_task(paths, args.task_id))
                 if task is None:
                     print(f"task not found: {args.task_id}", file=sys.stderr)
                     return 1
@@ -153,6 +193,67 @@ def run(argv: list[str] | None = None) -> int:
                     _print_task(task, args.json)
                     return 124
                 time.sleep(args.interval)
+
+        if args.tasks_command == "pause":
+            task = asyncio.run(get_task(paths, args.task_id))
+            if task is None:
+                print(f"task not found: {args.task_id}", file=sys.stderr)
+                return 1
+            asyncio.run(mark_paused(paths, args.task_id))
+            task = asyncio.run(get_task(paths, args.task_id))
+            _print_task(task, args.json)
+            return 0
+
+        if args.tasks_command == "resume":
+            task = asyncio.run(get_task(paths, args.task_id))
+            if task is None:
+                print(f"task not found: {args.task_id}", file=sys.stderr)
+                return 1
+            asyncio.run(mark_resumed(paths, args.task_id))
+            task = asyncio.run(get_task(paths, args.task_id))
+            _print_task(task, args.json)
+            return 0
+
+        if args.tasks_command == "cancel":
+            task = asyncio.run(get_task(paths, args.task_id))
+            if task is None:
+                print(f"task not found: {args.task_id}", file=sys.stderr)
+                return 1
+            asyncio.run(mark_cancelled(paths, args.task_id))
+            task = asyncio.run(get_task(paths, args.task_id))
+            _print_task(task, args.json)
+            return 0
+
+        if args.tasks_command == "retry":
+            original = asyncio.run(get_task(paths, args.task_id))
+            if original is None:
+                print(f"task not found: {args.task_id}", file=sys.stderr)
+                return 1
+            new_task = asyncio.run(
+                create_task(
+                    paths,
+                    role=original.role,
+                    task=original.payload.get("task", ""),
+                    namespace=original.namespace,
+                    max_retries=original.max_retries,
+                )
+            )
+            _print_task(new_task, args.json)
+            return 0
+
+        if args.tasks_command == "logs":
+            logs = asyncio.run(get_run_logs(paths, args.task_id))
+            if args.json:
+                print(json.dumps(logs, ensure_ascii=False))
+            else:
+                if not logs:
+                    print(f"no run logs for {args.task_id}")
+                for entry in logs:
+                    print(
+                        f"attempt={entry.get('attempt_no')} status={entry.get('status')} "
+                        f"duration_ms={entry.get('duration_ms')} created_at={entry.get('created_at')}"
+                    )
+            return 0
 
         tasks_parser.print_help()
         return 0
@@ -197,6 +298,8 @@ def run(argv: list[str] | None = None) -> int:
 
     if args.command == "workers":
         if args.workers_command == "start":
+            from .ipc_watcher import IPCWatcher
+            from .scheduler import Scheduler
             from .worker_pool import WorkerPool
 
             pool = WorkerPool(
@@ -204,36 +307,29 @@ def run(argv: list[str] | None = None) -> int:
                 max_workers=args.max_workers,
                 task_timeout=args.task_timeout,
             )
+            ipc_watcher = IPCWatcher(paths, namespace=args.namespace)
+            scheduler = Scheduler(paths)
+
             pool.start()
+            ipc_watcher.start()
+            scheduler.start()
             print(
-                f"WorkerPool started: max_workers={args.max_workers}, "
+                f"Daemon started: max_workers={args.max_workers}, "
                 f"task_timeout={args.task_timeout}s, namespace={args.namespace}",
                 file=sys.stderr,
             )
             try:
                 while True:
-                    # Process IPC files
-                    try:
-                        watch_once(paths, namespace=args.namespace)
-                    except Exception:
-                        pass
-                    # Scan pending tasks into pool
-                    try:
-                        pending = list_pending_tasks(paths, limit=args.max_workers * 2)
-                        for task in pending:
-                            pool.enqueue(task.task_id, task.payload)
-                    except Exception:
-                        pass
-                    time.sleep(IPC_POLL_INTERVAL)
+                    time.sleep(1.0)
             except KeyboardInterrupt:
-                print("\nShutting down WorkerPool...", file=sys.stderr)
+                print("\nShutting down...", file=sys.stderr)
+                scheduler.stop()
+                ipc_watcher.stop()
                 pool.stop()
             return 0
 
         if args.workers_command == "status":
-            # Status is only meaningful when pool is running in-process;
-            # here we show DB-level info instead
-            pending = list_pending_tasks(paths, limit=100)
+            pending = asyncio.run(list_pending_tasks(paths, limit=100))
             status = {
                 "pending_count": len(pending),
                 "pending_task_ids": [t.task_id for t in pending],

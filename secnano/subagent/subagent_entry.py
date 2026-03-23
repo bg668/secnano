@@ -71,10 +71,12 @@ def main(argv: list[str] | None = None) -> int:
     else:
         paths = ProjectPaths.discover()
 
+    import asyncio
+
     from secnano.runtime_db import mark_done, mark_failed, mark_running
 
     worker_id = task_data.get("worker_id", "subagent")
-    mark_running(paths, task_id, worker_id)
+    asyncio.run(mark_running(paths, task_id, worker_id))
 
     try:
         from secnano.agent_loop import run_agent_loop
@@ -92,13 +94,13 @@ def main(argv: list[str] | None = None) -> int:
             max_rounds=50,
         )
 
-        mark_done(paths, task_id, result={"summary": final_text})
+        asyncio.run(mark_done(paths, task_id, result={"summary": final_text}))
         return 0
 
     except Exception as exc:
         error_msg = str(exc)
         try:
-            mark_failed(paths, task_id, error=error_msg)
+            asyncio.run(mark_failed(paths, task_id, error=error_msg))
         except Exception:
             pass
         print(f"Subagent error for task {task_id}: {error_msg}", file=sys.stderr)
