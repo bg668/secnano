@@ -45,10 +45,7 @@ IDLE_TIMEOUT: int = 1800  # seconds before an idle subprocess is considered stal
 # ── Trigger pattern ───────────────────────────────────────────────────────────
 # Matches messages that start with "@<AssistantName>" or just the assistant name
 _raw_trigger = re.escape(ASSISTANT_NAME)
-TRIGGER_PATTERN: re.Pattern[str] = re.compile(
-    rf"(?i)^@?{_raw_trigger}\b",
-    re.IGNORECASE,
-)
+TRIGGER_PATTERN: re.Pattern[str] = re.compile(rf"(?i)^@?{_raw_trigger}\b")
 
 # ── Anthropic model ───────────────────────────────────────────────────────────
 ANTHROPIC_MODEL: str = _get("ANTHROPIC_MODEL", "claude-opus-4-5")

@@ -28,7 +28,7 @@ def format_local_time(utc_iso: str, tz_name: str = "UTC") -> str:
 
         # Convert to target timezone
         try:
-            from zoneinfo import ZoneInfo  # Python 3.9+
+            from zoneinfo import ZoneInfo  # Python 3.11+
 
             target_tz = ZoneInfo(tz_name)
         except (ImportError, KeyError):
