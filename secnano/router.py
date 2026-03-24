@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import html
 import re
-from typing import Optional
 
 from secnano.types import Channel, Message
 
@@ -49,7 +48,7 @@ def format_outbound(text: str) -> str:
     return strip_internal_tags(text)
 
 
-def find_channel(channels: list[Channel], jid: str) -> Optional[Channel]:
+def find_channel(channels: list[Channel], jid: str) -> Channel | None:
     """Return the first channel that owns *jid*, or ``None``."""
     for channel in channels:
         if channel.owns_jid(jid):

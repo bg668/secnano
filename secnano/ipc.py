@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Awaitable, Callable, Optional
 
 from secnano.config import DATA_DIR, IPC_POLL_INTERVAL
 from secnano.logger import get_logger
@@ -51,10 +51,9 @@ async def _poll_directory(
         except Exception as exc:
             log.error("IPC handler error", file=str(entry), error=str(exc))
         finally:
-            try:
+            import contextlib
+            with contextlib.suppress(OSError):
                 entry.unlink(missing_ok=True)
-            except OSError:
-                pass
 
 
 MessageHandler = Callable[[NewMessage], Awaitable[None]]
@@ -63,8 +62,8 @@ TaskHandler = Callable[[ScheduledTask], Awaitable[None]]
 
 async def start_ipc_watcher(
     group_folders: list[str],
-    on_message: Optional[MessageHandler] = None,
-    on_task: Optional[TaskHandler] = None,
+    on_message: MessageHandler | None = None,
+    on_task: TaskHandler | None = None,
     poll_interval: float = IPC_POLL_INTERVAL,
 ) -> None:
     """

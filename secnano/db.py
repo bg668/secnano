@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator, Optional
 
 from secnano.config import DB_PATH
 from secnano.types import (
@@ -25,7 +25,7 @@ from secnano.types import (
 )
 
 _lock = threading.Lock()
-_conn: Optional[sqlite3.Connection] = None
+_conn: sqlite3.Connection | None = None
 
 
 def _get_connection(db_path: Path | None = None) -> sqlite3.Connection:
@@ -157,7 +157,7 @@ def upsert_chat(chat: Chat) -> None:
         )
 
 
-def get_chat(jid: str) -> Optional[Chat]:
+def get_chat(jid: str) -> Chat | None:
     with _cursor() as cur:
         cur.execute("SELECT * FROM chats WHERE jid = ?", (jid,))
         row = cur.fetchone()
@@ -277,7 +277,7 @@ def upsert_scheduled_task(task: ScheduledTask) -> None:
         )
 
 
-def get_scheduled_task(task_id: str) -> Optional[ScheduledTask]:
+def get_scheduled_task(task_id: str) -> ScheduledTask | None:
     with _cursor() as cur:
         cur.execute("SELECT * FROM scheduled_tasks WHERE id = ?", (task_id,))
         row = cur.fetchone()
@@ -286,7 +286,7 @@ def get_scheduled_task(task_id: str) -> Optional[ScheduledTask]:
     return _row_to_task(row)
 
 
-def list_scheduled_tasks(status: Optional[str] = None) -> list[ScheduledTask]:
+def list_scheduled_tasks(status: str | None = None) -> list[ScheduledTask]:
     with _cursor() as cur:
         if status:
             cur.execute("SELECT * FROM scheduled_tasks WHERE status = ?", (status,))
@@ -296,7 +296,7 @@ def list_scheduled_tasks(status: Optional[str] = None) -> list[ScheduledTask]:
     return [_row_to_task(r) for r in rows]
 
 
-def update_task_next_run(task_id: str, next_run: Optional[str], last_run: str) -> None:
+def update_task_next_run(task_id: str, next_run: str | None, last_run: str) -> None:
     with _cursor() as cur:
         cur.execute(
             "UPDATE scheduled_tasks SET next_run = ?, last_run = ? WHERE id = ?",
@@ -304,7 +304,7 @@ def update_task_next_run(task_id: str, next_run: Optional[str], last_run: str) -
         )
 
 
-def update_task_last_result(task_id: str, result: Optional[str]) -> None:
+def update_task_last_result(task_id: str, result: str | None) -> None:
     with _cursor() as cur:
         cur.execute(
             "UPDATE scheduled_tasks SET last_result = ? WHERE id = ?",
@@ -367,7 +367,7 @@ def get_task_run_logs(task_id: str, limit: int = 20) -> list[TaskRunLog]:
 
 # ── Router State ──────────────────────────────────────────────────────────────
 
-def get_router_state(key: str) -> Optional[str]:
+def get_router_state(key: str) -> str | None:
     with _cursor() as cur:
         cur.execute("SELECT value FROM router_state WHERE key = ?", (key,))
         row = cur.fetchone()
@@ -392,7 +392,7 @@ def delete_router_state(key: str) -> None:
 
 # ── Sessions ──────────────────────────────────────────────────────────────────
 
-def get_session(group_folder: str) -> Optional[Session]:
+def get_session(group_folder: str) -> Session | None:
     with _cursor() as cur:
         cur.execute("SELECT * FROM sessions WHERE group_folder = ?", (group_folder,))
         row = cur.fetchone()
@@ -437,7 +437,7 @@ def _row_to_group(row: sqlite3.Row) -> RegisteredGroup:
     import json
 
     sp_raw = row["subprocess_config"]
-    subprocess_config: Optional[SubprocessConfig] = None
+    subprocess_config: SubprocessConfig | None = None
     if sp_raw:
         data = json.loads(sp_raw)
         subprocess_config = SubprocessConfig(
@@ -460,7 +460,7 @@ def _row_to_group(row: sqlite3.Row) -> RegisteredGroup:
 def upsert_registered_group(group: RegisteredGroup) -> None:
     import json
 
-    sp_json: Optional[str] = None
+    sp_json: str | None = None
     if group.subprocess_config:
         sp_json = json.dumps(
             {"timeout": group.subprocess_config.timeout}
@@ -492,7 +492,7 @@ def upsert_registered_group(group: RegisteredGroup) -> None:
         )
 
 
-def get_registered_group(folder: str) -> Optional[RegisteredGroup]:
+def get_registered_group(folder: str) -> RegisteredGroup | None:
     with _cursor() as cur:
         cur.execute("SELECT * FROM registered_groups WHERE folder = ?", (folder,))
         row = cur.fetchone()

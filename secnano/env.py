@@ -10,7 +10,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-
 _COMMENT_RE = re.compile(r"^\s*#.*$")
 _BLANK_RE = re.compile(r"^\s*$")
 _KV_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$")
@@ -18,9 +17,10 @@ _KV_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$")
 
 def _strip_quotes(value: str) -> str:
     """Remove surrounding single or double quotes from a value."""
-    if len(value) >= 2:
-        if (value[0] == '"' and value[-1] == '"') or (value[0] == "'" and value[-1] == "'"):
-            return value[1:-1]
+    if len(value) >= 2 and (
+        (value[0] == '"' and value[-1] == '"') or (value[0] == "'" and value[-1] == "'")
+    ):
+        return value[1:-1]
     return value
 
 

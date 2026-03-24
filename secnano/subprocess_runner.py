@@ -11,7 +11,7 @@ import asyncio
 import json
 import os
 import sys
-from typing import Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
 
 from secnano.config import DATA_DIR, GROUPS_DIR, PROJECT_ROOT, SUBPROCESS_TIMEOUT
 from secnano.logger import get_logger
@@ -42,7 +42,7 @@ async def _read_until_marker(stream: asyncio.StreamReader, marker: str) -> str:
     while True:
         try:
             line_bytes = await asyncio.wait_for(stream.readline(), timeout=5.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             break
         if not line_bytes:
             break
@@ -55,7 +55,7 @@ async def _read_until_marker(stream: asyncio.StreamReader, marker: str) -> str:
 
 async def _collect_output(
     stdout: asyncio.StreamReader,
-    on_output: Optional[Callable[[SubprocessOutput], Awaitable[None]]],
+    on_output: Callable[[SubprocessOutput], Awaitable[None]] | None,
 ) -> list[SubprocessOutput]:
     """Read all OUTPUT_START/END marker-wrapped JSON blocks from stdout."""
     outputs: list[SubprocessOutput] = []
@@ -63,7 +63,7 @@ async def _collect_output(
     while True:
         try:
             line_bytes = await asyncio.wait_for(stdout.readline(), timeout=2.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             break
         if not line_bytes:
             break
@@ -102,7 +102,7 @@ async def run_subprocess_agent(
     group: RegisteredGroup,
     input_data: SubprocessInput,
     on_process: Callable[[asyncio.subprocess.Process, str, str], None],
-    on_output: Optional[Callable[[SubprocessOutput], Awaitable[None]]] = None,
+    on_output: Callable[[SubprocessOutput], Awaitable[None]] | None = None,
 ) -> SubprocessOutput:
     """
     Spawn an agent subprocess and collect its output.
@@ -192,7 +192,7 @@ async def run_subprocess_agent(
             ),
             timeout=float(timeout),
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         log.error("Subprocess timed out", name=subprocess_name, timeout=timeout)
         proc.kill()
         return SubprocessOutput(
@@ -208,7 +208,7 @@ async def run_subprocess_agent(
     # Wait for process to exit
     try:
         await asyncio.wait_for(proc.wait(), timeout=10.0)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.kill()
 
     if proc.returncode != 0 and stderr_chunks:
@@ -216,7 +216,7 @@ async def run_subprocess_agent(
         log.warning("Subprocess stderr", name=subprocess_name, stderr=stderr_text[:500])
 
     # Return the last meaningful output (non-null result)
-    final: Optional[SubprocessOutput] = None
+    final: SubprocessOutput | None = None
     for output in reversed(outputs):
         if output.result is not None or output.status == "error":
             final = output

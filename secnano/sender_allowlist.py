@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
 
 from secnano.logger import get_logger
 
@@ -18,7 +17,7 @@ log = get_logger("sender_allowlist")
 _CONFIG_PATH = Path.home() / ".config" / "secnano" / "sender-allowlist.json"
 
 # Loaded allowlist: None means "allow all"
-_allowlist: Optional[set[str]] = None
+_allowlist: set[str] | None = None
 _loaded = False
 
 

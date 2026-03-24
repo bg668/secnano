@@ -4,8 +4,6 @@ Channel registration and lookup system.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from secnano.logger import get_logger
 from secnano.types import Channel
 
@@ -22,7 +20,7 @@ def register_channel(channel: Channel) -> None:
     log.info("Channel registered", name=channel.name)
 
 
-def get_channel(name: str) -> Optional[Channel]:
+def get_channel(name: str) -> Channel | None:
     """Return the channel registered under *name*, or ``None``."""
     return _registry.get(name)
 

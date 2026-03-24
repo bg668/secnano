@@ -8,8 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from secnano.channels.registry import list_channels
 from secnano.config import (
@@ -53,10 +52,10 @@ _channels: list = []
 
 
 def _now_utc() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
-def _get_session_id(group_folder: str) -> Optional[str]:
+def _get_session_id(group_folder: str) -> str | None:
     session = get_session(group_folder)
     return session.session_id if session else None
 
@@ -98,10 +97,9 @@ async def _process_group_messages(group: RegisteredGroup, messages: list[Message
     )
 
     if channel:
-        try:
+        import contextlib
+        with contextlib.suppress(Exception):
             await channel.set_typing(chat_jid, True)
-        except Exception:
-            pass
 
     async def _on_output(output: SubprocessOutput) -> None:
         if output.result:
@@ -131,10 +129,9 @@ async def _process_group_messages(group: RegisteredGroup, messages: list[Message
             log.error("Agent subprocess error", group=group.folder, error=result.error)
     finally:
         if channel:
-            try:
+            import contextlib
+            with contextlib.suppress(Exception):
                 await channel.set_typing(chat_jid, False)
-            except Exception:
-                pass
         _group_queue.notify_idle(chat_jid)
 
 
@@ -184,7 +181,7 @@ async def _handle_new_message(new_msg: NewMessage) -> None:
 
     # Find matching registered group
     groups = list_registered_groups()
-    matched: Optional[RegisteredGroup] = None
+    matched: RegisteredGroup | None = None
     for g in groups:
         if g.trigger == new_msg.chat_jid:
             matched = g
@@ -210,7 +207,7 @@ async def _handle_new_message(new_msg: NewMessage) -> None:
     await _group_queue.enqueue_task(new_msg.chat_jid, str(uuid.uuid4()), _run)
 
 
-async def _handle_scheduled_task(task: ScheduledTask) -> Optional[str]:
+async def _handle_scheduled_task(task: ScheduledTask) -> str | None:
     """Run a scheduled task through the agent subprocess."""
     group = next(
         (g for g in list_registered_groups() if g.folder == task.group_folder),
@@ -316,19 +313,17 @@ async def main() -> None:
     except (KeyboardInterrupt, asyncio.CancelledError):
         log.info("Shutting down...")
         await _group_queue.shutdown(grace_period_ms=5000)
+        import contextlib
         for channel in _channels:
-            try:
+            with contextlib.suppress(Exception):
                 await channel.disconnect()
-            except Exception:
-                pass
 
 
 def main_cli() -> None:
     """Entry point for the ``secnano`` CLI command."""
-    try:
+    import contextlib
+    with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(main())
-    except KeyboardInterrupt:
-        pass
 
 
 if __name__ == "__main__":

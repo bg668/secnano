@@ -4,7 +4,7 @@ Timezone conversion utilities.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def format_local_time(utc_iso: str, tz_name: str = "UTC") -> str:
@@ -24,7 +24,7 @@ def format_local_time(utc_iso: str, tz_name: str = "UTC") -> str:
         ts = utc_iso.replace("Z", "+00:00")
         dt_utc = datetime.fromisoformat(ts)
         if dt_utc.tzinfo is None:
-            dt_utc = dt_utc.replace(tzinfo=timezone.utc)
+            dt_utc = dt_utc.replace(tzinfo=UTC)
 
         # Convert to target timezone
         try:
@@ -32,7 +32,7 @@ def format_local_time(utc_iso: str, tz_name: str = "UTC") -> str:
 
             target_tz = ZoneInfo(tz_name)
         except (ImportError, KeyError):
-            target_tz = timezone.utc
+            target_tz = UTC
 
         dt_local = dt_utc.astimezone(target_tz)
         return dt_local.strftime("%Y-%m-%d %H:%M:%S %Z")
