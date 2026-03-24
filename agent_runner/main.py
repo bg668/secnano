@@ -15,7 +15,7 @@ import sys
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 OUTPUT_START_MARKER = "---SECNANO_OUTPUT_START---"
 OUTPUT_END_MARKER = "---SECNANO_OUTPUT_END---"
@@ -48,7 +48,7 @@ def get_session_file_path(group_folder: str) -> Path:
     return data_dir / "sessions" / group_folder / "history.json"
 
 
-def load_session(group_folder: str, session_id: Optional[str]) -> list[dict]:
+def load_session(group_folder: str, session_id: str | None) -> list[dict]:
     """Load conversation history from disk if a session exists."""
     if not session_id:
         return []
@@ -102,7 +102,7 @@ def build_system_prompt(group_folder: str, is_main: bool, assistant_name: str) -
 
 # ── IPC follow-up message reader ──────────────────────────────────────────────
 
-def wait_for_ipc_message(group_folder: str, timeout_s: float = 1800.0) -> Optional[str]:
+def wait_for_ipc_message(group_folder: str, timeout_s: float = 1800.0) -> str | None:
     """
     Poll the IPC input directory for the next message or close sentinel.
 
@@ -127,10 +127,9 @@ def wait_for_ipc_message(group_folder: str, timeout_s: float = 1800.0) -> Option
         # Check for close sentinel first
         sentinel = ipc_input_dir / IPC_CLOSE_SENTINEL
         if sentinel.exists():
-            try:
+            import contextlib
+            with contextlib.suppress(OSError):
                 sentinel.unlink(missing_ok=True)
-            except OSError:
-                pass
             return None
 
         # Find the earliest message file (sorted by filename = timestamp prefix)
@@ -147,10 +146,9 @@ def wait_for_ipc_message(group_folder: str, timeout_s: float = 1800.0) -> Option
                 msg_file.unlink(missing_ok=True)
                 return content
             except (json.JSONDecodeError, OSError):
-                try:
+                import contextlib
+                with contextlib.suppress(OSError):
                     msg_file.unlink(missing_ok=True)
-                except OSError:
-                    pass
 
         time.sleep(IPC_POLL_INTERVAL_S)
 
@@ -170,7 +168,7 @@ def main() -> None:
 
     # 2. Extract parameters
     prompt: str = container_input.get("prompt", "")
-    session_id: Optional[str] = container_input.get("session_id")
+    session_id: str | None = container_input.get("session_id")
     group_folder: str = container_input.get("group_folder", "default")
     is_main: bool = container_input.get("is_main", False)
     is_scheduled_task: bool = container_input.get("is_scheduled_task", False)
@@ -208,14 +206,14 @@ def main() -> None:
         prompt = f"[SCHEDULED TASK - The following message was sent automatically]\n\n{prompt}"
 
     # 7. Outer loop: handle IPC follow-up messages
-    new_session_id: Optional[str] = None
+    new_session_id: str | None = None
 
     while True:
         # Add the new user turn
         messages.append({"role": "user", "content": prompt})
 
         # 8. Inner agent loop: tool_use / end_turn
-        result_text: Optional[str] = None
+        result_text: str | None = None
 
         while True:
             try:

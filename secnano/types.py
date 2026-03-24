@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -14,7 +13,7 @@ class AdditionalMount:
     """Describes an additional filesystem mount for a subprocess workspace."""
 
     host_path: str
-    container_path: Optional[str] = None
+    container_path: str | None = None
     readonly: bool = True
 
 
@@ -22,8 +21,8 @@ class AdditionalMount:
 class SubprocessConfig:
     """Configuration for the agent subprocess."""
 
-    additional_mounts: Optional[list[AdditionalMount]] = None
-    timeout: Optional[int] = None
+    additional_mounts: list[AdditionalMount] | None = None
+    timeout: int | None = None
 
 
 @dataclass
@@ -34,9 +33,9 @@ class RegisteredGroup:
     folder: str
     trigger: str
     added_at: str
-    subprocess_config: Optional[SubprocessConfig] = None
-    requires_trigger: Optional[bool] = None  # Default: True for groups
-    is_main: Optional[bool] = None
+    subprocess_config: SubprocessConfig | None = None
+    requires_trigger: bool | None = None  # Default: True for groups
+    is_main: bool | None = None
 
 
 @dataclass
@@ -64,9 +63,9 @@ class ScheduledTask:
     schedule_type: str  # 'cron' | 'interval' | 'once'
     schedule_value: str
     context_mode: str  # 'group' | 'isolated'
-    next_run: Optional[str]
-    last_run: Optional[str]
-    last_result: Optional[str]
+    next_run: str | None
+    last_run: str | None
+    last_result: str | None
     status: str  # 'active' | 'paused' | 'completed'
     created_at: str
 
@@ -79,8 +78,8 @@ class TaskRunLog:
     run_at: str
     duration_ms: int
     status: str  # 'success' | 'error'
-    result: Optional[str]
-    error: Optional[str]
+    result: str | None
+    error: str | None
 
 
 @dataclass
@@ -88,9 +87,9 @@ class SubprocessOutput:
     """Output from an agent subprocess invocation."""
 
     status: str  # 'success' | 'error'
-    result: Optional[str]
-    new_session_id: Optional[str] = None
-    error: Optional[str] = None
+    result: str | None
+    new_session_id: str | None = None
+    error: str | None = None
 
 
 @dataclass
@@ -183,6 +182,6 @@ class SubprocessInput:
     group_folder: str
     chat_jid: str
     is_main: bool
-    session_id: Optional[str] = None
+    session_id: str | None = None
     is_scheduled_task: bool = False
     assistant_name: str = "Andy"

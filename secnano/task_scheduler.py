@@ -10,8 +10,8 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from datetime import datetime, timezone
-from typing import Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 
 from secnano.config import SCHEDULER_POLL_INTERVAL
 from secnano.db import (
@@ -26,16 +26,16 @@ from secnano.types import ScheduledTask, TaskRunLog
 
 log = get_logger("task_scheduler")
 
-TaskRunner = Callable[[ScheduledTask], Awaitable[Optional[str]]]
+TaskRunner = Callable[[ScheduledTask], Awaitable[str | None]]
 
 
 def _now_utc() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
-def _compute_next_run(task: ScheduledTask, after: Optional[datetime] = None) -> Optional[str]:
+def _compute_next_run(task: ScheduledTask, after: datetime | None = None) -> str | None:
     """Compute the next ISO-8601 run time for *task*."""
-    now = after or datetime.now(timezone.utc)
+    now = after or datetime.now(UTC)
 
     if task.schedule_type == "once":
         return None  # Run once; no next run
@@ -43,7 +43,7 @@ def _compute_next_run(task: ScheduledTask, after: Optional[datetime] = None) -> 
     if task.schedule_type == "interval":
         try:
             seconds = float(task.schedule_value)
-            next_dt = now.replace(tzinfo=timezone.utc) if now.tzinfo is None else now
+            next_dt = now.replace(tzinfo=UTC) if now.tzinfo is None else now
             from datetime import timedelta
 
             return (next_dt + timedelta(seconds=seconds)).isoformat()
@@ -57,7 +57,7 @@ def _compute_next_run(task: ScheduledTask, after: Optional[datetime] = None) -> 
 
             itr = croniter(task.schedule_value, now)
             next_dt = itr.get_next(datetime)
-            return next_dt.replace(tzinfo=timezone.utc).isoformat()
+            return next_dt.replace(tzinfo=UTC).isoformat()
         except Exception as exc:
             log.error("Invalid cron expression", task_id=task.id, error=str(exc))
             return None
@@ -75,8 +75,8 @@ def _is_due(task: ScheduledTask) -> bool:
     try:
         next_run_dt = datetime.fromisoformat(task.next_run.replace("Z", "+00:00"))
         if next_run_dt.tzinfo is None:
-            next_run_dt = next_run_dt.replace(tzinfo=timezone.utc)
-        return datetime.now(timezone.utc) >= next_run_dt
+            next_run_dt = next_run_dt.replace(tzinfo=UTC)
+        return datetime.now(UTC) >= next_run_dt
     except ValueError:
         return False
 
@@ -87,8 +87,8 @@ async def _run_task(task: ScheduledTask, runner: TaskRunner) -> None:
     log.info("Running scheduled task", task_id=task.id, group=task.group_folder)
 
     run_at = _now_utc()
-    result: Optional[str] = None
-    error: Optional[str] = None
+    result: str | None = None
+    error: str | None = None
     status = "success"
 
     try:
@@ -111,7 +111,7 @@ async def _run_task(task: ScheduledTask, runner: TaskRunner) -> None:
     insert_task_run_log(log_entry)
 
     # Compute next run
-    now_dt = datetime.now(timezone.utc)
+    now_dt = datetime.now(UTC)
     next_run = _compute_next_run(task, now_dt)
 
     new_status = task.status

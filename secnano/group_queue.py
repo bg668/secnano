@@ -12,8 +12,8 @@ import json
 import time
 import uuid
 from collections import defaultdict
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable, Optional
 
 from secnano.config import DATA_DIR
 from secnano.logger import get_logger
@@ -34,9 +34,9 @@ class _QueueEntry:
 class _GroupState:
     queue: asyncio.Queue[_QueueEntry] = field(default_factory=asyncio.Queue)
     running: bool = False
-    current_proc: Optional[asyncio.subprocess.Process] = None
-    subprocess_name: Optional[str] = None
-    group_folder: Optional[str] = None
+    current_proc: asyncio.subprocess.Process | None = None
+    subprocess_name: str | None = None
+    group_folder: str | None = None
     idle_event: asyncio.Event = field(default_factory=asyncio.Event)
 
     def __post_init__(self) -> None:
@@ -55,7 +55,7 @@ class GroupQueue:
 
     def __init__(self) -> None:
         self._states: dict[str, _GroupState] = defaultdict(_GroupState)
-        self._process_messages_fn: Optional[ProcessMessagesFn] = None
+        self._process_messages_fn: ProcessMessagesFn | None = None
         self._lock = asyncio.Lock()
 
     def set_process_messages_fn(self, fn: ProcessMessagesFn) -> None:
@@ -193,7 +193,7 @@ class GroupQueue:
         try:
             await asyncio.wait_for(state.idle_event.wait(), timeout=timeout)
             return True
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return False
 
     async def shutdown(self, grace_period_ms: int = 5000) -> None:
@@ -203,10 +203,9 @@ class GroupQueue:
         for jid, state in self._states.items():
             if state.current_proc and state.current_proc.returncode is None:
                 log.info("Terminating subprocess", jid=jid)
-                try:
+                import contextlib
+                with contextlib.suppress(ProcessLookupError):
                     state.current_proc.terminate()
-                except ProcessLookupError:
-                    pass
                 tasks.append(asyncio.create_task(state.idle_event.wait()))
 
         if tasks:
