@@ -1,0 +1,188 @@
+"""
+Type definitions for secnano.
+"""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Optional
+
+
+@dataclass
+class AdditionalMount:
+    """Describes an additional filesystem mount for a subprocess workspace."""
+
+    host_path: str
+    container_path: Optional[str] = None
+    readonly: bool = True
+
+
+@dataclass
+class SubprocessConfig:
+    """Configuration for the agent subprocess."""
+
+    additional_mounts: Optional[list[AdditionalMount]] = None
+    timeout: Optional[int] = None
+
+
+@dataclass
+class RegisteredGroup:
+    """A registered group/conversation that the orchestrator manages."""
+
+    name: str
+    folder: str
+    trigger: str
+    added_at: str
+    subprocess_config: Optional[SubprocessConfig] = None
+    requires_trigger: Optional[bool] = None  # Default: True for groups
+    is_main: Optional[bool] = None
+
+
+@dataclass
+class NewMessage:
+    """A new incoming message from a channel."""
+
+    id: str
+    chat_jid: str
+    sender: str
+    sender_name: str
+    content: str
+    timestamp: str
+    is_from_me: bool = False
+    is_bot_message: bool = False
+
+
+@dataclass
+class ScheduledTask:
+    """A scheduled task definition."""
+
+    id: str
+    group_folder: str
+    chat_jid: str
+    prompt: str
+    schedule_type: str  # 'cron' | 'interval' | 'once'
+    schedule_value: str
+    context_mode: str  # 'group' | 'isolated'
+    next_run: Optional[str]
+    last_run: Optional[str]
+    last_result: Optional[str]
+    status: str  # 'active' | 'paused' | 'completed'
+    created_at: str
+
+
+@dataclass
+class TaskRunLog:
+    """A log entry for a scheduled task run."""
+
+    task_id: str
+    run_at: str
+    duration_ms: int
+    status: str  # 'success' | 'error'
+    result: Optional[str]
+    error: Optional[str]
+
+
+@dataclass
+class SubprocessOutput:
+    """Output from an agent subprocess invocation."""
+
+    status: str  # 'success' | 'error'
+    result: Optional[str]
+    new_session_id: Optional[str] = None
+    error: Optional[str] = None
+
+
+@dataclass
+class RouterState:
+    """Key-value state persisted in the router_state table."""
+
+    key: str
+    value: str
+
+
+class Channel(ABC):
+    """Abstract base class for messaging channels."""
+
+    name: str
+
+    @abstractmethod
+    async def connect(self) -> None:
+        """Establish connection to the channel."""
+        ...
+
+    @abstractmethod
+    async def send_message(self, jid: str, text: str) -> None:
+        """Send a text message to the given JID."""
+        ...
+
+    @abstractmethod
+    def is_connected(self) -> bool:
+        """Return True if the channel is currently connected."""
+        ...
+
+    @abstractmethod
+    def owns_jid(self, jid: str) -> bool:
+        """Return True if this channel owns/handles the given JID."""
+        ...
+
+    @abstractmethod
+    async def disconnect(self) -> None:
+        """Disconnect from the channel."""
+        ...
+
+    async def set_typing(self, jid: str, is_typing: bool) -> None:
+        """Optionally set typing indicator. Default: no-op."""
+        return
+
+    async def sync_groups(self, force: bool = False) -> None:
+        """Optionally sync group list. Default: no-op."""
+        return
+
+
+@dataclass
+class Chat:
+    """A chat record stored in the database."""
+
+    jid: str
+    name: str
+    last_message_time: str
+    channel: str
+    is_group: bool = False
+
+
+@dataclass
+class Message:
+    """A message record stored in the database."""
+
+    id: str
+    chat_jid: str
+    sender: str
+    sender_name: str
+    content: str
+    timestamp: str
+    is_from_me: bool = False
+    is_bot_message: bool = False
+
+
+@dataclass
+class Session:
+    """A session record linking a group folder to a session ID and history file."""
+
+    group_folder: str
+    session_id: str
+    history_path: str
+    updated_at: str
+
+
+@dataclass
+class SubprocessInput:
+    """Input passed to the agent subprocess via stdin."""
+
+    prompt: str
+    group_folder: str
+    chat_jid: str
+    is_main: bool
+    session_id: Optional[str] = None
+    is_scheduled_task: bool = False
+    assistant_name: str = "Andy"

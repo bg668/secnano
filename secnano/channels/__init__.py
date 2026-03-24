@@ -1,0 +1,3 @@
+"""
+secnano.channels package.
+"""
