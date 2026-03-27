@@ -84,6 +84,11 @@ def build_system_prompt(group_folder: str, is_main: bool, assistant_name: str) -
     """Build the system prompt for the agent."""
     role = "main orchestration agent" if is_main else "group assistant"
     workspace = os.getcwd()
+    register_hint = (
+        "As the main group, you may call register_group to request registering other groups.\n\n"
+        if is_main
+        else ""
+    )
 
     return (
         f"You are {assistant_name}, an AI assistant acting as a {role}.\n\n"
@@ -92,6 +97,7 @@ def build_system_prompt(group_folder: str, is_main: bool, assistant_name: str) -
         "You have access to tools that let you read/write files, run bash commands, "
         "search files, and list directories within your workspace. "
         "Use these tools to accomplish tasks.\n\n"
+        f"{register_hint}"
         "When you are done with a task, provide a clear, concise summary of what you did "
         "and any important results. "
         "Wrap any internal reasoning or intermediate steps in <internal>...</internal> tags "

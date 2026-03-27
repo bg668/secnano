@@ -23,14 +23,18 @@ OUTPUT_START_MARKER = "---SECNANO_OUTPUT_START---"
 OUTPUT_END_MARKER = "---SECNANO_OUTPUT_END---"
 
 
-def _build_env(group_folder: str) -> dict[str, str]:
+def _build_env(group_folder: str, chat_jid: str, is_main: bool) -> dict[str, str]:
     """Build the environment variables for the agent subprocess."""
     env = os.environ.copy()
     # Ensure the agent_runner package is importable
     env["PYTHONPATH"] = str(PROJECT_ROOT)
     env["SECNANO_GROUP_FOLDER"] = group_folder
+    env["SECNANO_CHAT_JID"] = chat_jid
+    env["SECNANO_IS_MAIN"] = "1" if is_main else "0"
     env["SECNANO_GROUPS_DIR"] = str(GROUPS_DIR)
     env["SECNANO_DATA_DIR"] = str(DATA_DIR)
+    env["SECNANO_GROUP_IPC_DIR"] = str(DATA_DIR / "ipc" / group_folder)
+    env["SECNANO_TASKS_DIR"] = str(DATA_DIR / "ipc" / group_folder / "tasks")
     env["SECNANO_IPC_DIR"] = str(DATA_DIR / "ipc" / group_folder / "input")
     # ANTHROPIC_API_KEY is inherited from os.environ.copy() above
     return env
@@ -128,7 +132,7 @@ async def run_subprocess_agent(
     workspace_dir = GROUPS_DIR / group_folder
     workspace_dir.mkdir(parents=True, exist_ok=True)
 
-    env = _build_env(group_folder)
+    env = _build_env(group_folder, input_data.chat_jid, input_data.is_main)
     stdin_payload = json.dumps(
         {
             "prompt": input_data.prompt,

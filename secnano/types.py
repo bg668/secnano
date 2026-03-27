@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -50,6 +51,28 @@ class NewMessage:
     timestamp: str
     is_from_me: bool = False
     is_bot_message: bool = False
+
+
+@dataclass
+class ChatMetadata:
+    """Chat/group metadata discovered by channels or IPC bridges."""
+
+    chat_jid: str
+    timestamp: str
+    name: str | None = None
+    channel: str | None = None
+    is_group: bool | None = None
+
+
+@dataclass
+class IpcTaskRequest:
+    """A generic task request read from ``data/ipc/{source_group}/tasks``."""
+
+    id: str
+    source_group: str
+    type: str
+    payload: dict[str, Any]
+    timestamp: str | None = None
 
 
 @dataclass

@@ -157,6 +157,40 @@ def upsert_chat(chat: Chat) -> None:
         )
 
 
+def store_chat_metadata(
+    chat_jid: str,
+    timestamp: str,
+    name: str | None = None,
+    channel: str | None = None,
+    is_group: bool | None = None,
+) -> None:
+    """
+    Store chat metadata without requiring a message row.
+
+    Existing values are preserved when optional fields are omitted.
+    """
+    existing = get_chat(chat_jid)
+    resolved_name = name or (existing.name if existing else chat_jid)
+    resolved_channel = channel or (existing.channel if existing else "unknown")
+    resolved_is_group = (
+        is_group if is_group is not None else (existing.is_group if existing else True)
+    )
+
+    last_message_time = timestamp
+    if existing and existing.last_message_time > timestamp:
+        last_message_time = existing.last_message_time
+
+    upsert_chat(
+        Chat(
+            jid=chat_jid,
+            name=resolved_name,
+            last_message_time=last_message_time,
+            channel=resolved_channel,
+            is_group=resolved_is_group,
+        )
+    )
+
+
 def get_chat(jid: str) -> Chat | None:
     with _cursor() as cur:
         cur.execute("SELECT * FROM chats WHERE jid = ?", (jid,))

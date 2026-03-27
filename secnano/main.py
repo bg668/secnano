@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 from secnano.channels.registry import list_channels
@@ -19,14 +20,18 @@ from secnano.config import (
     TRIGGER_PATTERN,
 )
 from secnano.db import (
+    get_chat,
     get_messages,
+    get_registered_group,
     get_session,
     init_database,
     insert_message,
     list_registered_groups,
-    upsert_chat,
+    store_chat_metadata,
+    upsert_registered_group,
     upsert_session,
 )
+from secnano.group_folder import is_valid_group_folder
 from secnano.group_queue import GroupQueue
 from secnano.ipc import start_ipc_watcher
 from secnano.logger import configure_logging, get_logger
@@ -35,7 +40,8 @@ from secnano.sender_allowlist import is_sender_allowed
 from secnano.subprocess_runner import run_subprocess_agent
 from secnano.task_scheduler import start_scheduler_loop
 from secnano.types import (
-    Chat,
+    ChatMetadata,
+    IpcTaskRequest,
     Message,
     NewMessage,
     RegisteredGroup,
@@ -149,6 +155,97 @@ def _store_bot_message(chat_jid: str, text: str, group_folder: str) -> None:
     insert_message(msg)
 
 
+async def _handle_chat_metadata(metadata: ChatMetadata) -> None:
+    """Persist chat metadata without triggering message routing."""
+    if not metadata.chat_jid:
+        return
+
+    store_chat_metadata(
+        chat_jid=metadata.chat_jid,
+        timestamp=metadata.timestamp or _now_utc(),
+        name=metadata.name,
+        channel=metadata.channel,
+        is_group=metadata.is_group,
+    )
+
+
+async def _handle_ipc_task(task: IpcTaskRequest) -> None:
+    """Process IPC task requests (currently: register_group)."""
+    if task.type != "register_group":
+        log.debug("Ignoring unsupported IPC task type", type=task.type, source_group=task.source_group)
+        return
+
+    source = get_registered_group(task.source_group)
+    if source is None or not source.is_main:
+        log.warning(
+            "Unauthorized register_group attempt blocked",
+            source_group=task.source_group,
+            task_id=task.id,
+        )
+        return
+
+    data = task.payload
+    jid = str(data.get("jid", "")).strip()
+    name = str(data.get("name", "")).strip()
+    folder = str(data.get("folder", "")).strip()
+    trigger = str(data.get("trigger", "")).strip() or jid
+
+    if not (jid and name and folder and trigger):
+        log.warning("Invalid register_group task payload", task_id=task.id, source_group=task.source_group)
+        return
+    if not is_valid_group_folder(folder):
+        log.warning(
+            "Invalid register_group folder name",
+            task_id=task.id,
+            source_group=task.source_group,
+            folder=folder,
+        )
+        return
+
+    existing = get_chat(jid)
+    store_chat_metadata(
+        chat_jid=jid,
+        timestamp=task.timestamp or _now_utc(),
+        name=name,
+        channel=(data.get("channel") or (existing.channel if existing else None)),
+        is_group=True,
+    )
+
+    requires_trigger_value = data.get("requires_trigger")
+    requires_trigger: bool | None = None
+    if isinstance(requires_trigger_value, bool):
+        requires_trigger = requires_trigger_value
+    elif isinstance(requires_trigger_value, str):
+        lowered = requires_trigger_value.strip().lower()
+        if lowered in {"true", "1", "yes"}:
+            requires_trigger = True
+        elif lowered in {"false", "0", "no"}:
+            requires_trigger = False
+
+    group = RegisteredGroup(
+        name=name,
+        folder=folder,
+        trigger=trigger,
+        added_at=_now_utc(),
+        requires_trigger=requires_trigger,
+        is_main=False,
+    )
+    upsert_registered_group(group)
+
+    # Ensure workspace and IPC directories exist for the newly registered group.
+    (GROUPS_DIR / folder).mkdir(parents=True, exist_ok=True)
+    group_ipc = DATA_DIR / "ipc" / folder
+    for sub in ("input", "messages", "tasks", "chat_metadata"):
+        (group_ipc / sub).mkdir(parents=True, exist_ok=True)
+
+    log.info(
+        "Group registered via IPC task",
+        source_group=task.source_group,
+        folder=folder,
+        trigger=trigger,
+    )
+
+
 async def _handle_new_message(new_msg: NewMessage) -> None:
     """Process a new incoming message from any channel."""
     if new_msg.is_bot_message or new_msg.is_from_me:
@@ -158,15 +255,13 @@ async def _handle_new_message(new_msg: NewMessage) -> None:
         log.debug("Sender not in allowlist", sender=new_msg.sender)
         return
 
-    # Persist chat and message
-    upsert_chat(
-        Chat(
-            jid=new_msg.chat_jid,
-            name=new_msg.sender_name or new_msg.chat_jid,
-            last_message_time=new_msg.timestamp or _now_utc(),
-            channel="unknown",
-            is_group=True,
-        )
+    # Persist chat metadata and message
+    store_chat_metadata(
+        chat_jid=new_msg.chat_jid,
+        timestamp=new_msg.timestamp or _now_utc(),
+        name=new_msg.sender_name or new_msg.chat_jid,
+        channel="unknown",
+        is_group=True,
     )
     insert_message(
         Message(
@@ -214,8 +309,7 @@ async def _handle_scheduled_task(task: ScheduledTask) -> str | None:
         None,
     )
     if group is None:
-        log.warning("Scheduled task references unknown group", task_id=task.id)
-        return None
+        raise RuntimeError(f"Scheduled task references unknown group: {task.group_folder}")
 
     session_id = _get_session_id(task.group_folder) if task.context_mode == "group" else None
 
@@ -244,14 +338,21 @@ async def _handle_scheduled_task(task: ScheduledTask) -> str | None:
             _save_session(task.group_folder, output.new_session_id)
 
     def _on_process(proc: asyncio.subprocess.Process, name: str, folder: str) -> None:
-        pass
+        _group_queue.register_process(task.chat_jid, proc, name, folder)
 
-    result = await run_subprocess_agent(
-        group=group,
-        input_data=input_data,
-        on_process=_on_process,
-        on_output=_on_output,
-    )
+    try:
+        result = await run_subprocess_agent(
+            group=group,
+            input_data=input_data,
+            on_process=_on_process,
+            on_output=_on_output,
+        )
+    finally:
+        _group_queue.notify_idle(task.chat_jid)
+
+    if result.status == "error":
+        raise RuntimeError(result.error or "Scheduled task subprocess failed")
+
     return result.result
 
 
@@ -264,6 +365,21 @@ def recover_pending_messages() -> None:
         if ipc_input.exists() and any(ipc_input.iterdir()):
             log.info("Recovering pending IPC messages", group=group.folder)
             asyncio.create_task(_process_group_messages(group, []))
+
+
+async def _enqueue_due_task(
+    task: ScheduledTask,
+    run: Callable[[], Awaitable[None]] | None = None,
+) -> None:
+    """
+    Enqueue a due scheduled task into the per-group queue.
+
+    The ``run`` callable is provided by ``task_scheduler``; it executes and
+    updates run logs/next_run/status.
+    """
+    if run is None:
+        return
+    await _group_queue.enqueue_task(task.chat_jid, task.id, run)
 
 
 async def main() -> None:
@@ -284,12 +400,17 @@ async def main() -> None:
 
     # Start background tasks
     asyncio.create_task(
-        start_scheduler_loop(runner=_handle_scheduled_task)
+        start_scheduler_loop(
+            runner=_handle_scheduled_task,
+            enqueue=_enqueue_due_task,
+        )
     )
     asyncio.create_task(
         start_ipc_watcher(
             group_folders=group_folders,
             on_message=_handle_new_message,
+            on_task=_handle_ipc_task,
+            on_chat_metadata=_handle_chat_metadata,
         )
     )
 

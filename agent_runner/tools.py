@@ -7,9 +7,13 @@ All filesystem operations are sandboxed relative to the group workspace (cwd).
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
+import time
+import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +39,39 @@ TOOLS: list[dict] = [
                 },
             },
             "required": ["command"],
+        },
+    },
+    {
+        "name": "register_group",
+        "description": (
+            "Request host-side registration for a new group via IPC task file. "
+            "Only host-authorized main groups can complete this request."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "jid": {
+                    "type": "string",
+                    "description": "The target chat JID to register.",
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Human-friendly group name.",
+                },
+                "folder": {
+                    "type": "string",
+                    "description": "Workspace folder slug for this group.",
+                },
+                "trigger": {
+                    "type": "string",
+                    "description": "Routing trigger JID (defaults to jid when omitted).",
+                },
+                "requires_trigger": {
+                    "type": "boolean",
+                    "description": "Whether mentions are required to trigger replies.",
+                },
+            },
+            "required": ["jid", "name", "folder"],
         },
     },
     {
@@ -164,6 +201,30 @@ def _safe_path(requested: str, cwd: str) -> Path:
     return candidate
 
 
+def _resolve_tasks_dir() -> Path:
+    tasks_dir = os.environ.get("SECNANO_TASKS_DIR")
+    if tasks_dir:
+        return Path(tasks_dir)
+
+    data_dir = os.environ.get("SECNANO_DATA_DIR")
+    group_folder = os.environ.get("SECNANO_GROUP_FOLDER")
+    if not data_dir or not group_folder:
+        raise ValueError("SECNANO_TASKS_DIR (or DATA_DIR + GROUP_FOLDER) is not configured")
+    return Path(data_dir) / "ipc" / group_folder / "tasks"
+
+
+def _write_task_request(task_data: dict[str, Any]) -> str:
+    tasks_dir = _resolve_tasks_dir()
+    tasks_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = f"{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}.json"
+    final_path = tasks_dir / filename
+    temp_path = tasks_dir / f".{filename}.tmp"
+    temp_path.write_text(json.dumps(task_data, ensure_ascii=False), encoding="utf-8")
+    temp_path.replace(final_path)
+    return filename
+
+
 # ── Tool implementations ──────────────────────────────────────────────────────
 
 def execute_bash(command: str, cwd: str, timeout: int = 30) -> str:
@@ -188,6 +249,44 @@ def execute_bash(command: str, cwd: str, timeout: int = 30) -> str:
         return f"[error] Command timed out after {timeout}s"
     except Exception as exc:
         return f"[error] {exc}"
+
+
+def register_group(
+    jid: str,
+    name: str,
+    folder: str,
+    trigger: str | None = None,
+    requires_trigger: bool | None = None,
+) -> str:
+    """Write a register_group IPC task request for host-side processing."""
+    jid = (jid or "").strip()
+    name = (name or "").strip()
+    folder = (folder or "").strip()
+    trigger = (trigger or jid).strip()
+
+    if not jid or not name or not folder or not trigger:
+        return "[error] jid, name, folder and trigger must be non-empty"
+
+    if not re.match(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$", folder):
+        return "[error] folder must match ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+
+    payload: dict[str, Any] = {
+        "type": "register_group",
+        "jid": jid,
+        "name": name,
+        "folder": folder,
+        "trigger": trigger,
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+    if requires_trigger is not None:
+        payload["requires_trigger"] = bool(requires_trigger)
+
+    try:
+        filename = _write_task_request(payload)
+    except Exception as exc:
+        return f"[error] Failed to write IPC task: {exc}"
+
+    return f"register_group request queued: {filename}"
 
 
 def read_file(path: str, cwd: str) -> str:
@@ -325,6 +424,14 @@ def execute_tool(name: str, input_data: dict[str, Any], cwd: str) -> str:
                 input_data["command"],
                 cwd,
                 input_data.get("timeout", 30),
+            )
+        elif name == "register_group":
+            return register_group(
+                jid=input_data["jid"],
+                name=input_data["name"],
+                folder=input_data["folder"],
+                trigger=input_data.get("trigger"),
+                requires_trigger=input_data.get("requires_trigger"),
             )
         elif name == "read_file":
             return read_file(input_data["path"], cwd)

@@ -27,6 +27,9 @@ from secnano.types import ScheduledTask, TaskRunLog
 log = get_logger("task_scheduler")
 
 TaskRunner = Callable[[ScheduledTask], Awaitable[str | None]]
+TaskEnqueue = Callable[[ScheduledTask, Callable[[], Awaitable[None]]], Awaitable[None]]
+
+_queued_task_ids: set[str] = set()
 
 
 def _now_utc() -> str:
@@ -140,6 +143,7 @@ async def _run_task(task: ScheduledTask, runner: TaskRunner) -> None:
 
 async def start_scheduler_loop(
     runner: TaskRunner,
+    enqueue: TaskEnqueue | None = None,
     poll_interval: float = SCHEDULER_POLL_INTERVAL,
 ) -> None:
     """
@@ -155,16 +159,52 @@ async def start_scheduler_loop(
 
     while True:
         try:
-            tasks = list_scheduled_tasks(status="active")
-            due = [t for t in tasks if _is_due(t)]
-
-            if due:
-                log.info("Running due tasks", count=len(due))
-                await asyncio.gather(*[_run_task(t, runner) for t in due])
+            await _enqueue_due_tasks_once(runner=runner, enqueue=enqueue)
         except Exception as exc:
             log.error("Scheduler loop error", error=str(exc))
 
         await asyncio.sleep(poll_interval)
+
+
+async def _enqueue_due_tasks_once(
+    runner: TaskRunner,
+    enqueue: TaskEnqueue | None = None,
+) -> int:
+    """
+    Enqueue due tasks once and return the number of newly enqueued tasks.
+
+    When ``enqueue`` is ``None``, tasks are started as background asyncio tasks.
+    """
+    tasks = list_scheduled_tasks(status="active")
+    due = [t for t in tasks if _is_due(t)]
+    enqueued_count = 0
+
+    for task in due:
+        if task.id in _queued_task_ids:
+            continue
+
+        _queued_task_ids.add(task.id)
+
+        async def _run_wrapped(current: ScheduledTask = task) -> None:
+            try:
+                await _run_task(current, runner)
+            finally:
+                _queued_task_ids.discard(current.id)
+
+        try:
+            if enqueue:
+                await enqueue(task, _run_wrapped)
+            else:
+                asyncio.create_task(_run_wrapped())
+        except Exception:
+            _queued_task_ids.discard(task.id)
+            raise
+        enqueued_count += 1
+
+    if enqueued_count:
+        log.info("Enqueued due tasks", count=enqueued_count)
+
+    return enqueued_count
 
 
 def schedule_task(
