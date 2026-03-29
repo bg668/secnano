@@ -10,7 +10,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
 from secnano.config import DB_PATH
@@ -126,6 +126,7 @@ def init_database(db_path: Path | None = None) -> None:
             );
 
             CREATE TABLE IF NOT EXISTS registered_groups (
+                jid TEXT NOT NULL UNIQUE,
                 name TEXT NOT NULL,
                 folder TEXT PRIMARY KEY,
                 trigger TEXT NOT NULL,
@@ -134,6 +135,21 @@ def init_database(db_path: Path | None = None) -> None:
                 requires_trigger INTEGER,
                 is_main INTEGER
             );
+            """
+        )
+        with suppress(sqlite3.OperationalError):
+            conn.execute("ALTER TABLE registered_groups ADD COLUMN jid TEXT")
+        conn.execute(
+            """
+            UPDATE registered_groups
+            SET jid = trigger
+            WHERE jid IS NULL OR jid = ''
+            """
+        )
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_registered_groups_jid
+            ON registered_groups (jid)
             """
         )
         conn.commit()
@@ -272,6 +288,32 @@ def get_messages(chat_jid: str, limit: int = 50) -> list[Message]:
     ]
 
 
+def list_recent_messages(limit: int = 50) -> list[Message]:
+    with _cursor() as cur:
+        cur.execute(
+            """
+            SELECT * FROM messages
+            ORDER BY timestamp DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        rows = cur.fetchall()
+    return [
+        Message(
+            id=r["id"],
+            chat_jid=r["chat_jid"],
+            sender=r["sender"],
+            sender_name=r["sender_name"],
+            content=r["content"],
+            timestamp=r["timestamp"],
+            is_from_me=bool(r["is_from_me"]),
+            is_bot_message=bool(r["is_bot_message"]),
+        )
+        for r in rows
+    ]
+
+
 # ── Scheduled Tasks ───────────────────────────────────────────────────────────
 
 def upsert_scheduled_task(task: ScheduledTask) -> None:
@@ -399,6 +441,29 @@ def get_task_run_logs(task_id: str, limit: int = 20) -> list[TaskRunLog]:
     ]
 
 
+def list_recent_task_run_logs(limit: int = 20) -> list[TaskRunLog]:
+    with _cursor() as cur:
+        cur.execute(
+            """
+            SELECT * FROM task_run_logs
+            ORDER BY run_at DESC LIMIT ?
+            """,
+            (limit,),
+        )
+        rows = cur.fetchall()
+    return [
+        TaskRunLog(
+            task_id=r["task_id"],
+            run_at=r["run_at"],
+            duration_ms=r["duration_ms"],
+            status=r["status"],
+            result=r["result"],
+            error=r["error"],
+        )
+        for r in rows
+    ]
+
+
 # ── Router State ──────────────────────────────────────────────────────────────
 
 def get_router_state(key: str) -> str | None:
@@ -465,6 +530,21 @@ def delete_session(group_folder: str) -> None:
         cur.execute("DELETE FROM sessions WHERE group_folder = ?", (group_folder,))
 
 
+def list_sessions() -> list[Session]:
+    with _cursor() as cur:
+        cur.execute("SELECT * FROM sessions ORDER BY updated_at DESC")
+        rows = cur.fetchall()
+    return [
+        Session(
+            group_folder=row["group_folder"],
+            session_id=row["session_id"],
+            history_path=row["history_path"],
+            updated_at=row["updated_at"],
+        )
+        for row in rows
+    ]
+
+
 # ── Registered Groups ─────────────────────────────────────────────────────────
 
 def _row_to_group(row: sqlite3.Row) -> RegisteredGroup:
@@ -479,6 +559,7 @@ def _row_to_group(row: sqlite3.Row) -> RegisteredGroup:
         )
 
     return RegisteredGroup(
+        jid=row["jid"],
         name=row["name"],
         folder=row["folder"],
         trigger=row["trigger"],
@@ -504,9 +585,10 @@ def upsert_registered_group(group: RegisteredGroup) -> None:
         cur.execute(
             """
             INSERT INTO registered_groups
-                (name, folder, trigger, added_at, subprocess_config, requires_trigger, is_main)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (jid, name, folder, trigger, added_at, subprocess_config, requires_trigger, is_main)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(folder) DO UPDATE SET
+                jid               = excluded.jid,
                 name              = excluded.name,
                 trigger           = excluded.trigger,
                 added_at          = excluded.added_at,
@@ -515,6 +597,7 @@ def upsert_registered_group(group: RegisteredGroup) -> None:
                 is_main           = excluded.is_main
             """,
             (
+                group.jid,
                 group.name,
                 group.folder,
                 group.trigger,
@@ -529,6 +612,13 @@ def upsert_registered_group(group: RegisteredGroup) -> None:
 def get_registered_group(folder: str) -> RegisteredGroup | None:
     with _cursor() as cur:
         cur.execute("SELECT * FROM registered_groups WHERE folder = ?", (folder,))
+        row = cur.fetchone()
+    return _row_to_group(row) if row else None
+
+
+def get_registered_group_by_jid(jid: str) -> RegisteredGroup | None:
+    with _cursor() as cur:
+        cur.execute("SELECT * FROM registered_groups WHERE jid = ?", (jid,))
         row = cur.fetchone()
     return _row_to_group(row) if row else None
 

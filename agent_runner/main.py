@@ -189,10 +189,11 @@ def main() -> None:
     if not api_key:
         write_error("ANTHROPIC_API_KEY not set")
         return
+    base_url = os.environ.get("ANTHROPIC_BASE_URL") or None
 
     try:
         import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.Anthropic(api_key=api_key, base_url=base_url)
     except Exception as exc:
         write_error(f"Failed to initialize Anthropic client: {exc}")
         return

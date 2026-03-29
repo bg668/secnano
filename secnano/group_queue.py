@@ -210,3 +210,21 @@ class GroupQueue:
 
         if tasks:
             await asyncio.wait(tasks, timeout=grace)
+
+    def snapshot(self) -> list[dict[str, object]]:
+        """Return a read-only snapshot of queue and process state for all groups."""
+        items: list[dict[str, object]] = []
+        for jid, state in self._states.items():
+            proc = state.current_proc
+            items.append(
+                {
+                    "jid": jid,
+                    "group_folder": state.group_folder,
+                    "running": state.running,
+                    "queue_size": state.queue.qsize(),
+                    "subprocess_name": state.subprocess_name,
+                    "pid": proc.pid if proc else None,
+                    "returncode": proc.returncode if proc else None,
+                }
+            )
+        return sorted(items, key=lambda item: str(item["jid"]))

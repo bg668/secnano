@@ -30,6 +30,7 @@ class SubprocessConfig:
 class RegisteredGroup:
     """A registered group/conversation that the orchestrator manages."""
 
+    jid: str
     name: str
     folder: str
     trigger: str

@@ -48,11 +48,20 @@ _raw_trigger = re.escape(ASSISTANT_NAME)
 TRIGGER_PATTERN: re.Pattern[str] = re.compile(rf"(?i)^@?{_raw_trigger}\b")
 
 # ── Anthropic model ───────────────────────────────────────────────────────────
+ANTHROPIC_API_KEY: str = _get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_BASE_URL: str = _get("ANTHROPIC_BASE_URL", "")
 ANTHROPIC_MODEL: str = _get("ANTHROPIC_MODEL", "claude-opus-4-5")
 
 # ── IPC directory structure ───────────────────────────────────────────────────
 IPC_DIR: Path = DATA_DIR / "ipc"
 SESSIONS_DIR: Path = DATA_DIR / "sessions"
+
+# ── Built-in Web Channel / Bootstrap ──────────────────────────────────────────
+WEB_CHANNEL_HOST: str = _get("WEB_CHANNEL_HOST", "127.0.0.1")
+WEB_CHANNEL_PORT: int = int(_get("WEB_CHANNEL_PORT", "8765"))
+DEFAULT_MAIN_JID: str = _get("DEFAULT_MAIN_JID", "web:main")
+DEFAULT_MAIN_FOLDER: str = _get("DEFAULT_MAIN_FOLDER", "main")
+DEFAULT_MAIN_NAME: str = _get("DEFAULT_MAIN_NAME", "Main Web Chat")
 
 # ── Database ──────────────────────────────────────────────────────────────────
 DB_PATH: Path = DATA_DIR / "secnano.db"

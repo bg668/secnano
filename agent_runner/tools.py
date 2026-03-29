@@ -64,7 +64,7 @@ TOOLS: list[dict] = [
                 },
                 "trigger": {
                     "type": "string",
-                    "description": "Routing trigger JID (defaults to jid when omitted).",
+                    "description": "Mention trigger text, e.g. '@Andy'. Defaults to the assistant name.",
                 },
                 "requires_trigger": {
                     "type": "boolean",
@@ -262,7 +262,8 @@ def register_group(
     jid = (jid or "").strip()
     name = (name or "").strip()
     folder = (folder or "").strip()
-    trigger = (trigger or jid).strip()
+    assistant_name = os.environ.get("ASSISTANT_NAME", "Andy").strip() or "Andy"
+    trigger = (trigger or f"@{assistant_name}").strip()
 
     if not jid or not name or not folder or not trigger:
         return "[error] jid, name, folder and trigger must be non-empty"

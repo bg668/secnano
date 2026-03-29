@@ -13,7 +13,15 @@ import os
 import sys
 from collections.abc import Awaitable, Callable
 
-from secnano.config import DATA_DIR, GROUPS_DIR, PROJECT_ROOT, SUBPROCESS_TIMEOUT
+from secnano.config import (
+    ANTHROPIC_API_KEY,
+    ANTHROPIC_BASE_URL,
+    ANTHROPIC_MODEL,
+    DATA_DIR,
+    GROUPS_DIR,
+    PROJECT_ROOT,
+    SUBPROCESS_TIMEOUT,
+)
 from secnano.logger import get_logger
 from secnano.types import RegisteredGroup, SubprocessInput, SubprocessOutput
 
@@ -36,7 +44,12 @@ def _build_env(group_folder: str, chat_jid: str, is_main: bool) -> dict[str, str
     env["SECNANO_GROUP_IPC_DIR"] = str(DATA_DIR / "ipc" / group_folder)
     env["SECNANO_TASKS_DIR"] = str(DATA_DIR / "ipc" / group_folder / "tasks")
     env["SECNANO_IPC_DIR"] = str(DATA_DIR / "ipc" / group_folder / "input")
-    # ANTHROPIC_API_KEY is inherited from os.environ.copy() above
+    if ANTHROPIC_API_KEY:
+        env["ANTHROPIC_API_KEY"] = ANTHROPIC_API_KEY
+    if ANTHROPIC_BASE_URL:
+        env["ANTHROPIC_BASE_URL"] = ANTHROPIC_BASE_URL
+    if ANTHROPIC_MODEL:
+        env["ANTHROPIC_MODEL"] = ANTHROPIC_MODEL
     return env
 
 
