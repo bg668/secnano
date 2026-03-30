@@ -1,5 +1,11 @@
-__pycache__
+__pycache__/
 *.pyc
 *.egg-info/
 .env
 .worktrees/
+.venv/
+.pytest_cache/
+.ruff_cache/
+data/
+groups/
+store/

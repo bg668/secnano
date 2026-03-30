@@ -161,14 +161,6 @@ class AgentOutput:
     metrics: dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass
-class RouterState:
-    """Key-value state persisted in the router_state table."""
-
-    key: str
-    value: str
-
-
 class Channel(ABC):
     """Abstract base class for messaging channels."""
 

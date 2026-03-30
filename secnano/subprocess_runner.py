@@ -52,24 +52,6 @@ def _build_env(group_folder: str, chat_jid: str, is_main: bool) -> dict[str, str
         env["ANTHROPIC_MODEL"] = ANTHROPIC_MODEL
     return env
 
-
-async def _read_until_marker(stream: asyncio.StreamReader, marker: str) -> str:
-    """Read lines from *stream* until *marker* is found, return accumulated text."""
-    lines: list[str] = []
-    while True:
-        try:
-            line_bytes = await asyncio.wait_for(stream.readline(), timeout=5.0)
-        except TimeoutError:
-            break
-        if not line_bytes:
-            break
-        line = line_bytes.decode("utf-8", errors="replace").rstrip("\n")
-        if line == marker:
-            break
-        lines.append(line)
-    return "\n".join(lines)
-
-
 async def _collect_output(
     stdout: asyncio.StreamReader,
     on_output: Callable[[SubprocessOutput], Awaitable[None]] | None,

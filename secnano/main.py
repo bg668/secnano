@@ -254,16 +254,6 @@ def _truncate(text: str | None, limit: int = 240) -> str | None:
 def _record_agent_run(summary: dict[str, object]) -> None:
     _recent_agent_runs.append(summary)
 
-
-def _get_agent_run(run_id: str | None) -> dict[str, object] | None:
-    if not run_id:
-        return None
-    for item in reversed(_recent_agent_runs):
-        if item.get("run_id") == run_id:
-            return item
-    return None
-
-
 def _build_ops_snapshot(
     filter_text: str | None = None,
     selected_run_id: str | None = None,

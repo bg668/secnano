@@ -134,11 +134,6 @@ def init_database(db_path: Path | None = None) -> None:
             CREATE INDEX IF NOT EXISTS idx_trace_events_stage ON trace_events (stage);
             CREATE INDEX IF NOT EXISTS idx_trace_events_timestamp ON trace_events (timestamp);
 
-            CREATE TABLE IF NOT EXISTS router_state (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );
-
             CREATE TABLE IF NOT EXISTS sessions (
                 group_folder TEXT PRIMARY KEY,
                 session_id TEXT NOT NULL,
@@ -552,32 +547,6 @@ def list_recent_task_run_logs(limit: int = 20) -> list[TaskRunLog]:
         )
         for r in rows
     ]
-
-
-# ── Router State ──────────────────────────────────────────────────────────────
-
-def get_router_state(key: str) -> str | None:
-    with _cursor() as cur:
-        cur.execute("SELECT value FROM router_state WHERE key = ?", (key,))
-        row = cur.fetchone()
-    return row["value"] if row else None
-
-
-def set_router_state(key: str, value: str) -> None:
-    with _cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO router_state (key, value) VALUES (?, ?)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value
-            """,
-            (key, value),
-        )
-
-
-def delete_router_state(key: str) -> None:
-    with _cursor() as cur:
-        cur.execute("DELETE FROM router_state WHERE key = ?", (key,))
-
 
 # ── Sessions ──────────────────────────────────────────────────────────────────
 

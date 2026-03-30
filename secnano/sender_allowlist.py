@@ -59,10 +59,3 @@ def is_sender_allowed(sender_jid: str) -> bool:
     # Normalize: strip @s.whatsapp.net or similar suffixes for comparison
     bare = sender_jid.split("@")[0]
     return sender_jid in _allowlist or bare in _allowlist
-
-
-def reload() -> None:
-    """Force reload of the allowlist from disk."""
-    global _loaded
-    _loaded = False
-    _load()
