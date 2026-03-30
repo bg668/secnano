@@ -7,6 +7,7 @@ opened lazily and kept open for the lifetime of the process.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 from collections.abc import Generator
@@ -22,6 +23,7 @@ from secnano.types import (
     Session,
     SubprocessConfig,
     TaskRunLog,
+    TraceEvent,
 )
 
 _lock = threading.Lock()
@@ -112,6 +114,25 @@ def init_database(db_path: Path | None = None) -> None:
             );
 
             CREATE INDEX IF NOT EXISTS idx_task_run_logs_task_id ON task_run_logs (task_id);
+
+            CREATE TABLE IF NOT EXISTS trace_events (
+                event_id TEXT PRIMARY KEY,
+                trace_id TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                category TEXT NOT NULL,
+                stage TEXT NOT NULL,
+                status TEXT NOT NULL,
+                jid TEXT,
+                group_folder TEXT,
+                task_id TEXT,
+                run_id TEXT,
+                source TEXT,
+                details_json TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_trace_events_trace_id ON trace_events (trace_id);
+            CREATE INDEX IF NOT EXISTS idx_trace_events_stage ON trace_events (stage);
+            CREATE INDEX IF NOT EXISTS idx_trace_events_timestamp ON trace_events (timestamp);
 
             CREATE TABLE IF NOT EXISTS router_state (
                 key TEXT PRIMARY KEY,
@@ -418,6 +439,75 @@ def insert_task_run_log(log: TaskRunLog) -> None:
         )
 
 
+def insert_trace_event(event: TraceEvent) -> None:
+    with _cursor() as cur:
+        cur.execute(
+            """
+            INSERT OR REPLACE INTO trace_events
+                (event_id, trace_id, timestamp, category, stage, status, jid,
+                 group_folder, task_id, run_id, source, details_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event.event_id,
+                event.trace_id,
+                event.timestamp,
+                event.category,
+                event.stage,
+                event.status,
+                event.jid,
+                event.group_folder,
+                event.task_id,
+                event.run_id,
+                event.source,
+                json.dumps(event.details) if event.details else None,
+            ),
+        )
+
+
+def list_trace_events(trace_id: str | None = None, limit: int = 100) -> list[TraceEvent]:
+    with _cursor() as cur:
+        if trace_id:
+            cur.execute(
+                """
+                SELECT * FROM trace_events
+                WHERE trace_id = ?
+                ORDER BY timestamp ASC
+                LIMIT ?
+                """,
+                (trace_id, limit),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT * FROM trace_events
+                ORDER BY timestamp DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+        rows = cur.fetchall()
+    events = [_row_to_trace_event(row) for row in rows]
+    return events if trace_id else list(reversed(events))
+
+
+def _row_to_trace_event(row: sqlite3.Row) -> TraceEvent:
+    return TraceEvent(
+        event_id=row["event_id"],
+        trace_id=row["trace_id"],
+        timestamp=row["timestamp"],
+        category=row["category"],
+        stage=row["stage"],
+        status=row["status"],
+        jid=row["jid"],
+        group_folder=row["group_folder"],
+        task_id=row["task_id"],
+        run_id=row["run_id"],
+        source=row["source"],
+        details=json.loads(row["details_json"]) if row["details_json"] else {},
+    )
+
+
 def get_task_run_logs(task_id: str, limit: int = 20) -> list[TaskRunLog]:
     with _cursor() as cur:
         cur.execute(
@@ -548,8 +638,6 @@ def list_sessions() -> list[Session]:
 # ── Registered Groups ─────────────────────────────────────────────────────────
 
 def _row_to_group(row: sqlite3.Row) -> RegisteredGroup:
-    import json
-
     sp_raw = row["subprocess_config"]
     subprocess_config: SubprocessConfig | None = None
     if sp_raw:

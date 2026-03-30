@@ -5,7 +5,7 @@ Type definitions for secnano.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -114,6 +114,51 @@ class SubprocessOutput:
     result: str | None
     new_session_id: str | None = None
     error: str | None = None
+
+
+@dataclass
+class TraceEvent:
+    """Stable trace event used for host flow assertions and replay."""
+
+    event_id: str
+    trace_id: str
+    timestamp: str
+    category: str
+    stage: str
+    status: str
+    jid: str | None = None
+    group_folder: str | None = None
+    task_id: str | None = None
+    run_id: str | None = None
+    source: str | None = None
+    details: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class AgentInput:
+    """Stable host-to-runtime contract."""
+
+    run_id: str
+    trace_id: str
+    group_folder: str
+    chat_jid: str
+    is_main: bool
+    mode: str  # "message" | "scheduled_task"
+    prompt: str
+    session_id: str | None = None
+    context_refs: list[str] | None = None
+
+
+@dataclass
+class AgentOutput:
+    """Stable runtime-to-host contract."""
+
+    run_id: str
+    status: str  # "success" | "error" | "partial"
+    reply_text: str | None
+    session_id: str | None = None
+    error: str | None = None
+    metrics: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

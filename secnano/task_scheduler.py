@@ -22,7 +22,8 @@ from secnano.db import (
     upsert_scheduled_task,
 )
 from secnano.logger import get_logger
-from secnano.types import ScheduledTask, TaskRunLog
+from secnano.trace import get_trace_store
+from secnano.types import ScheduledTask, TaskRunLog, TraceEvent
 
 log = get_logger("task_scheduler")
 
@@ -30,10 +31,35 @@ TaskRunner = Callable[[ScheduledTask], Awaitable[str | None]]
 TaskEnqueue = Callable[[ScheduledTask, Callable[[], Awaitable[None]]], Awaitable[None]]
 
 _queued_task_ids: set[str] = set()
+_trace_store = get_trace_store()
 
 
 def _now_utc() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _emit_trace(
+    *,
+    trace_id: str,
+    stage: str,
+    status: str,
+    task: ScheduledTask,
+    details: dict[str, object] | None = None,
+) -> None:
+    _trace_store.record(
+        TraceEvent(
+            event_id=str(uuid.uuid4()),
+            trace_id=trace_id,
+            timestamp=_now_utc(),
+            category="scheduled_task",
+            stage=stage,
+            status=status,
+            jid=task.chat_jid,
+            group_folder=task.group_folder,
+            task_id=task.id,
+            details=details or {},
+        )
+    )
 
 
 def _compute_next_run(task: ScheduledTask, after: datetime | None = None) -> str | None:
@@ -88,6 +114,7 @@ async def _run_task(task: ScheduledTask, runner: TaskRunner) -> None:
     """Execute a single scheduled task and record the result."""
     start_ms = int(time.monotonic() * 1000)
     log.info("Running scheduled task", task_id=task.id, group=task.group_folder)
+    _emit_trace(trace_id=task.id, stage="scheduled_task.started", status="accepted", task=task)
 
     run_at = _now_utc()
     result: str | None = None
@@ -97,10 +124,18 @@ async def _run_task(task: ScheduledTask, runner: TaskRunner) -> None:
     try:
         result = await runner(task)
         update_task_last_result(task.id, result)
+        _emit_trace(trace_id=task.id, stage="scheduled_task.completed", status="success", task=task)
     except Exception as exc:
         log.error("Scheduled task failed", task_id=task.id, error=str(exc))
         error = str(exc)
         status = "error"
+        _emit_trace(
+            trace_id=task.id,
+            stage="scheduled_task.failed",
+            status="error",
+            task=task,
+            details={"error": error},
+        )
 
     duration_ms = int(time.monotonic() * 1000) - start_ms
     log_entry = TaskRunLog(
@@ -112,6 +147,13 @@ async def _run_task(task: ScheduledTask, runner: TaskRunner) -> None:
         error=error,
     )
     insert_task_run_log(log_entry)
+    _emit_trace(
+        trace_id=task.id,
+        stage="scheduled_task.logged",
+        status=status,
+        task=task,
+        details={"run_at": run_at},
+    )
 
     # Compute next run
     now_dt = datetime.now(UTC)
@@ -183,6 +225,8 @@ async def _enqueue_due_tasks_once(
         if task.id in _queued_task_ids:
             continue
 
+        _emit_trace(trace_id=task.id, stage="scheduled_task.due", status="accepted", task=task)
+
         _queued_task_ids.add(task.id)
 
         async def _run_wrapped(current: ScheduledTask = task) -> None:
@@ -199,6 +243,7 @@ async def _enqueue_due_tasks_once(
         except Exception:
             _queued_task_ids.discard(task.id)
             raise
+        _emit_trace(trace_id=task.id, stage="scheduled_task.enqueued", status="accepted", task=task)
         enqueued_count += 1
 
     if enqueued_count:

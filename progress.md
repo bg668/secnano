@@ -1,13 +1,54 @@
 # Progress
 
 ## Session Log
-- 建立了本次核对的 planning files。
-- 发现本机缺少 `python` 命令，无法运行 `planning-with-files` 的 `session-catchup.py`。
-- 发现 `rg.exe` 不可用，后续改用 PowerShell 搜索。
-- 已阅读 `secnano/main.py`、`secnano/ipc.py`、`secnano/types.py`，确认 watcher 的目录发现和 task `source_group` 反推逻辑。
-- 已对照 `secnano/db.py`、`secnano/router.py`、`secnano/group_queue.py` 与 `refs/nanoclaw/src/index.ts`、`db.ts`，确认 JID 路由模型、触发判定和消息游标设计存在结构性差异。
-- 已确认 secnano 缺少可见的 main 组 bootstrap 入口，测试用例之外没有生产代码创建 `is_main=True` 注册组。
-- 已在 `D:\Work\01_processing\secnano\.worktrees\jid-routing-bootstrap` 中完成实现，新增实现计划文档 `docs/plans/2026-03-27-jid-routing-bootstrap.md`。
-- 新鲜验证结果：
-  - `uv run pytest -q` -> `9 passed in 0.18s`
-  - `uv run ruff check` -> `All checks passed!`
+- 新增了 `secnano/ops_view.py`，把 ops/debug payload 的 builder 从 `main.py` 外提为独立模块。
+- 新增测试 `tests/test_ops_view.py`，验证 ops/debug snapshot builder 的稳定入口与 payload 形状。
+- `secnano/main.py` 中本地未使用的 ops helper 已删除，只保留数据采集与对 `ops_view` 的薄包装调用。
+- 运行 `.venv\\Scripts\\python.exe -m pytest tests\\test_ops_view.py tests\\test_web_channel.py tests\\test_trace_events.py tests\\test_devplan_d0.py tests\\test_runtime_orchestration.py -q`，结果 `15 passed`。
+- 运行 `.venv\\Scripts\\python.exe -m ruff check secnano\\main.py secnano\\ops_view.py secnano\\ingress.py secnano\\control_plane.py secnano\\runtime.py secnano\\runtime_orchestration.py secnano\\task_scheduler.py secnano\\trace.py secnano\\logger.py tests\\test_ops_view.py tests\\test_web_channel.py tests\\test_trace_events.py tests\\test_devplan_d0.py tests\\test_runtime_orchestration.py`，结果通过。
+- 新增了 `secnano/runtime_orchestration.py`，并通过 `RuntimeOrchestrator` 承接消息执行与定时任务执行的运行时编排。
+- `secnano/main.py` 中 `_process_group_messages()` 与 `_handle_scheduled_task()` 现已改为 orchestrator 薄包装调用。
+- 新增测试 `tests/test_runtime_orchestration.py`，验证运行时编排层可通过 runtime adapter 执行定时任务、发送消息、保存 session、记录 agent run。
+- 在 `secnano/logger.py` 与 `secnano/main.py` 中补充了 recent log / ops timeline 的语义说明，减少其与正式 TraceEvent 的混淆。
+- 运行 `.venv\\Scripts\\python.exe -m pytest tests\\test_trace_events.py tests\\test_devplan_d0.py tests\\test_runtime_orchestration.py -q`，结果 `12 passed`。
+- 运行 `.venv\\Scripts\\python.exe -m ruff check secnano\\main.py secnano\\ingress.py secnano\\control_plane.py secnano\\runtime.py secnano\\runtime_orchestration.py secnano\\task_scheduler.py secnano\\trace.py secnano\\logger.py tests\\test_trace_events.py tests\\test_devplan_d0.py tests\\test_runtime_orchestration.py`，结果通过。
+- 新增了 `secnano/ingress.py` 与 `secnano/control_plane.py`，并将 `_handle_chat_metadata()`、`_handle_new_message()`、`_handle_ipc_task()` 的主体逻辑下沉到新模块。
+- `secnano/main.py` 现已改为对 ingress/control plane 的薄包装调用，继续保留启动装配、依赖连接、生命周期与 runtime orchestration。
+- 运行 `.venv\\Scripts\\python.exe -m pytest tests\\test_trace_events.py tests\\test_devplan_d0.py -q`，结果仍为 `11 passed`。
+- 运行 `.venv\\Scripts\\python.exe -m ruff check secnano\\main.py secnano\\ingress.py secnano\\control_plane.py secnano\\task_scheduler.py secnano\\runtime.py secnano\\trace.py tests\\test_trace_events.py tests\\test_devplan_d0.py`，结果通过。
+- 为定时任务流新增了失败测试，断言 `scheduled_task.due / enqueued / started / completed / logged` 事件序列与任务状态更新。
+- 在 `secnano/trace.py` 中补入 `get_trace_store()`，让 host 组件共享同一个默认 trace store。
+- 在 `secnano/task_scheduler.py` 中新增调度侧 `_emit_trace()`，并把 due/enqueued/started/completed|failed/logged 接到 `trace_events`。
+- 运行 `.venv\\Scripts\\python.exe -m pytest tests\\test_trace_events.py tests\\test_devplan_d0.py -q`，结果 `11 passed`。
+- 运行 `.venv\\Scripts\\python.exe -m ruff check secnano\\main.py secnano\\runtime.py secnano\\task_scheduler.py secnano\\trace.py tests\\test_trace_events.py tests\\test_devplan_d0.py`，结果通过。
+- 为普通消息流和主组注册流新增了失败测试，并在 `tests/test_devplan_d0.py` 中断言稳定 TraceEvent 序列。
+- 在 `secnano/main.py` 中新增 `_trace_store`、`_get_runtime_adapter()`、`_emit_trace()`，把消息流与 IPC 注册流接入正式 TraceEvent 持久化。
+- 将 `_process_group_messages()` 切换到 `AgentInput` / `AgentOutput` 与 `SubprocessRuntimeAdapter`。
+- 将 `_handle_scheduled_task()` 同步切到 runtime adapter，避免 `main.py` 保持半新半旧的运行时调用方式。
+- 运行 `.venv\\Scripts\\python.exe -m pytest tests\\test_trace_events.py tests\\test_devplan_d0.py -q`，结果 `10 passed`。
+- 运行 `.venv\\Scripts\\python.exe -m ruff check secnano\\main.py secnano\\runtime.py tests\\test_devplan_d0.py tests\\test_trace_events.py`，结果通过。
+- 使用 `uv pip install --python .\\.venv\\Scripts\\python.exe pytest pytest-asyncio` 补齐了当前 `.venv` 的测试依赖，解决了 TDD 无法执行的问题。
+- 先写失败测试 `tests/test_trace_events.py`，分别覆盖：
+  - `TraceStore` 将事件同时写入 ring buffer 和 SQLite
+  - `SubprocessRuntimeAdapter` 将 `AgentInput`/`AgentOutput` 映射到当前 subprocess runner
+- 实现了 `secnano/trace.py`、`secnano/runtime.py`，并在 `secnano/types.py`、`secnano/db.py` 中补上相应数据结构和持久化方法。
+- 运行 `.venv\\Scripts\\python.exe -m pytest tests\\test_trace_events.py tests\\test_devplan_d0.py -q`，结果 `8 passed`。
+- 运行 `.venv\\Scripts\\python.exe -m ruff check secnano\\types.py secnano\\db.py secnano\\trace.py secnano\\runtime.py tests\\test_trace_events.py`，结果通过。
+- 读取并遵守了用户指定的两份约束文档：`docs/plans/2026-03-30-constraints-trace-design.md` 与 `docs/plans/2026-03-30-ai-execution-instructions.md`。
+- 阅读了已有 `task_plan.md`、`findings.md`、`progress.md`，沿用项目内的 planning-with-files 工作记录。
+- 重新审阅 `secnano/main.py`、`ipc.py`、`task_scheduler.py`、`db.py`、`types.py`、`group_queue.py`、`subprocess_runner.py`、`logger.py`、现有测试，定位第一轮最小切入点。
+- 确认当前环境存在 `.venv\\Scripts\\python.exe`，但尚未安装 `pytest` 与 `ruff`，因此第一轮计划中的验收命令需要同时区分“目标命令”和“当前环境前置条件”。
+- 读取并使用了 `using-superpowers` 与 `planning-with-files` 技能。
+- 检查了仓库根目录、已有 planning files、git 状态与项目结构。
+- 阅读了 `README.md`、`pyproject.toml`、`docs/devplan.md`，确认项目自述和阶段性开发目标。
+- 阅读了 `secnano/main.py`、`db.py`、`ipc.py`、`task_scheduler.py`、`group_queue.py`、`subprocess_runner.py`、`router.py`、`config.py`、`sender_allowlist.py`、`group_folder.py`、`channels/web.py`、`channels/registry.py`、`agent_runner/main.py`、`agent_runner/tools.py`。
+- 阅读了现有测试 `tests/test_devplan_d0.py` 与 `tests/test_web_channel.py`，确认当前自动化验证重心。
+- 对照读取了 `refs/nanoclaw/README.md` 以及 `refs/nanoclaw/src` 中与 scheduler / ipc / group queue / container runner 相关的实现与测试索引。
+- 确认当前环境无法直接运行 `pytest` / `ruff`，因此本次判断主要基于代码审阅与现有测试结构，而不是新鲜执行结果。
+- 产出并保存了最小结构约束与 TraceEvent 设计文档：`docs/plans/2026-03-30-constraints-trace-design.md`。
+- 产出并保存了可直接交给 AI 的执行说明：`docs/plans/2026-03-30-ai-execution-instructions.md`。
+
+## Interim Conclusion
+- 当前 secnano 已完成“主流程骨架 + 一部分关键闭环”。
+- 现阶段最合适的结论方向是：MVP 基本成立，实用阶段未完成，完整产品还差一个明确的 agent adapter 层和更强的 host 控制面。
+- 第一轮最值得做的不是继续加能力，而是先把 runtime contract、TraceEvent、黄金路径测试和 `main.py` 的最小拆分钉牢。

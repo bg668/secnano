@@ -12,6 +12,7 @@ license = { text = "MIT" }
 dependencies = [
     "anthropic>=0.40.0",
     "croniter>=2.0.0",
+    "ruff>=0.15.7",
     "structlog>=24.0.0",
     "typing-extensions>=4.0.0",
 ]

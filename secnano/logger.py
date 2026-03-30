@@ -95,7 +95,7 @@ def get_logger(name: str = "secnano") -> structlog.stdlib.BoundLogger:
 
 
 def get_recent_events(limit: int = 50) -> list[dict[str, Any]]:
-    """Return the most recent structured log events."""
+    """Return recent ops/debug log events, not the formal TraceEvent stream."""
     if limit <= 0:
         return []
     return list(_RECENT_EVENTS)[-limit:]
